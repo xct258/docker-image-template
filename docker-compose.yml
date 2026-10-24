@@ -1,0 +1,5 @@
+services:
+  app:
+    image: ${IMAGE_REF:?请先执行 ./build.sh --env 生成 .env}
+    container_name: ${CONTAINER_NAME:-app}
+    restart: unless-stopped
