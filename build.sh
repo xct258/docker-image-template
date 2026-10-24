@@ -59,17 +59,11 @@ IMAGE_TAG="${IMAGE_TAG:-latest}"
 BASE_IMAGE="${BASE_IMAGE:-xct258/debian-cn:latest}"
 PLATFORMS="${PLATFORMS:-linux/amd64,linux/arm64}"
 CONTAINER_NAME="${CONTAINER_NAME:-app}"
-PORT="${PORT:-}"
 
 case "${BASE_IMAGE}" in
     *@sha256:*|*:*) ;;
     *) die "BASE_IMAGE 必须指定 tag 或 digest: ${BASE_IMAGE}" ;;
 esac
-
-if [ -n "${PORT}" ]; then
-    [[ "${PORT}" =~ ^[0-9]+$ ]] || die "PORT 必须是数字: ${PORT}"
-    ((PORT >= 1 && PORT <= 65535)) || die "PORT 超出范围(1-65535): ${PORT}"
-fi
 
 for f in packages.txt install.sh start.sh; do
     [ -f "${ROOT}/${f}" ] || die "缺少 ${f}"
@@ -96,7 +90,6 @@ if [ "${ENV_ONLY}" = "1" ]; then
 # 由 build.sh 生成，请勿提交
 IMAGE_REF=${IMAGE_REPO}:${IMAGE_VERSION}
 CONTAINER_NAME=${CONTAINER_NAME}
-PORT=${PORT}
 EOF
     info "已生成 .env"
     exit 0

@@ -49,6 +49,16 @@ docker compose up -d
 - 最后一条命令必须 `exec`（前台运行），否则 `docker stop` 无法优雅退出
 - 需要多个常驻进程时，自己起守护或拆成多个容器
 
+## 端口与挂载
+
+模板不预设端口，按需传给运行时：
+
+```bash
+./run.sh -- -p 8080:80 -v "$PWD/data:/data"
+```
+
+compose 则在 `docker-compose.yml` 里取消 `ports` 注释并修改。
+
 ## 说明
 
 - 基础镜像默认 `xct258/debian-cn`（Debian 系），换镜像时确保有 `apt-get`
