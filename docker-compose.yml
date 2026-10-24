@@ -1,7 +1,8 @@
 services:
   app:
-    image: ${IMAGE_REF:?请先执行 ./build.sh --env 生成 .env}
-    container_name: ${CONTAINER_NAME:-app}
+    # 镜像名默认与 image.conf 一致，可在这里改，或用环境变量覆盖
+    image: ${IMAGE_REF:-xct258/my-image:latest}
+    container_name: ${CONTAINER_NAME:-my-image}
     restart: unless-stopped
     # 需要端口映射时取消注释
     # ports:
