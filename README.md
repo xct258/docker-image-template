@@ -44,7 +44,7 @@
 2. 仓库 Settings → Secrets and variables → Actions，添加：
    - `DOCKERACC`：Docker Hub 账号
    - `DOCKERPWD`：Docker Hub 密码或 Access Token
-3. `docker-compose.yml` 里的默认镜像名同步改成一样（或部署时用 `IMAGE_REF` 覆盖）
+3. `docker-compose.yml` 里的默认镜像名同步改成一样（或部署时用 `IMAGE_REF` 覆盖）；`container_name` 也建议改成唯一名称，`check.sh` 只在它还是 `my-image` 时提醒，不做强制校验
 
 ## 构建
 
@@ -76,6 +76,7 @@ CI 的 Validate 步骤调用的是同一个脚本，本地过了线上基本不�
 - `install/`、`startup/`、`template/` 下脚本的语法
 - `install/app.conf` 必填项（`IMAGE_REPO` / `PLATFORMS`）与开关取值（`true` / `false`）
 - Dockerfile 里 `wget` 的下载路径在仓库中是否真的存在、`startup/` 脚本列表是否一致
+- `docker-compose.yml` 的默认镜像名是否与 `install/app.conf` 的 `IMAGE_REPO:IMAGE_TAG` 一致（`container_name` 只提醒不校验）
 - `docker-compose.yml` 与 workflow 的 YAML 解析
 - 装了 `shellcheck` / `hadolint` 时顺带检查（只提示，不影响结果）
 
