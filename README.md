@@ -137,7 +137,7 @@ CI 的 Validate 步骤调用的是同一个脚本，本地过了线上基本不�
 - compose 的 `healthcheck` 用的失败标记是否和 `start.sh` 的 `FAIL_MARK` 一致
 - `docker-compose.yml` 的镜像名是否与 `install/app.conf` 的 `IMAGE_REPO:IMAGE_TAG` 一致（`container_name` 只提醒不校验）
 - `docker-compose.yml` 与 workflow 的 YAML 解析
-- 装了 `shellcheck` / `hadolint` 时顺带检查（只提示，不影响结果）
+- 装了 `shellcheck` 时顺带检查（只提示，不影响结果）
 
 ## 部署
 
