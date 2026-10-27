@@ -75,6 +75,7 @@ docker compose up -d
 
 - 多个常驻进程请拆成多个容器，或用进程管理工具
 - apt / pip 装不了的东西写进 `custom-install.sh`，脚本内可用 `${TARGETARCH}` 区分 `amd64` / `arm64`
+- 项目命名不是 `amd64` / `arm64` 时用脚本里的 `arch_name` 映射，如 `arch_name x64 aarch64`
 - `custom-install.sh` 里装完依赖记得清理临时文件，减小镜像体积
 
 ## 说明
