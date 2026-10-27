@@ -103,6 +103,22 @@ docker compose up -d
       - ./data:/data
 ```
 
+## 工作目录
+
+镜像里不固定 `WORKDIR`，容器主进程的默认工作目录是 `/`。需要固定时在 compose 里取消注释：
+
+```yaml
+    # working_dir: /app
+```
+
+`working_dir` 同时决定 `docker exec` 进去的落点和主进程继承的 cwd。挂载代码目录时配套使用：
+
+```yaml
+    working_dir: /workspace
+    volumes:
+      - ./workspace:/workspace
+```
+
 ## 环境变量
 
 在 `docker-compose.yml` 的 `environment:` 下面加键值，容器里直接就能用：

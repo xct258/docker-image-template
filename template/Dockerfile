@@ -50,5 +50,5 @@ RUN set -eux; \
     fetch "${REPO_URL}/template/start.sh" /start.sh; \
     chmod +x /start.sh
 
-WORKDIR /app
+# 工作目录不在这里固定，默认是 /；需要固定时用 compose 的 working_dir 指定
 ENTRYPOINT ["/start.sh"]
