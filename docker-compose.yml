@@ -6,7 +6,9 @@ services:
     # 默认 host 网络：直接用宿主机端口，不需要 ports 映射
     # 想用桥接网络就注释掉这行，再打开下面的 ports
     network_mode: host
-    restart: unless-stopped
+    # 启动失败直接退出，不自动重启：重试不会自己好，只会刷屏日志
+    # 需要自动拉起就改成 on-failure:3（非 0 退出重试 3 次）或 unless-stopped
+    restart: "no"
     # 工作目录默认是 /；需要固定就取消注释（挂载代码后用 /workspace 之类）
     # working_dir: /workspace
     # 需要传给容器的变量，在这里加一行即可：KEY: 值
