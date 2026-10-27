@@ -1,7 +1,7 @@
 #!/bin/bash
 # ============================================================
 # 依赖安装（固定模板，无需修改）
-#   配置在 app.conf：APT_PACKAGES / PYTHON_PACKAGES / CUSTOM_INSTALL
+#   配置在 app.conf：APT_PACKAGES / INSTALL_7Z / PYTHON_PACKAGES / CUSTOM_INSTALL
 # ============================================================
 set -euo pipefail
 
@@ -13,8 +13,47 @@ fi
 # shellcheck disable=SC1090
 source "$CONF"
 
+# 目标架构（buildx 提供 TARGETARCH，本地构建时回退 uname）
+target_arch="${TARGETARCH:-}"
+if [ -z "$target_arch" ]; then
+    case "$(uname -m)" in
+        x86_64) target_arch=amd64 ;;
+        aarch64|arm64) target_arch=arm64 ;;
+        *) target_arch="$(uname -m)" ;;
+    esac
+fi
+
 # ------------------------------------------------------------
-# 1. 收集 pip 依赖（非空则自动安装 Python）
+# 常用软件快捷安装
+# ------------------------------------------------------------
+install_7z() {
+    echo "[7z] 正在获取最新版本信息..."
+    local release version pattern url tmp
+    release=$(curl -fsSL --retry 3 --retry-delay 5 https://api.github.com/repos/ip7z/7zip/releases/latest)
+    version=$(echo "$release" | jq -r '.tag_name')
+    case "$target_arch" in
+        amd64) pattern="linux-x64.tar.xz" ;;
+        arm64) pattern="linux-arm64.tar.xz" ;;
+        *) echo "[7z] 不支持的架构: ${target_arch}" >&2; return 1 ;;
+    esac
+    url=$(echo "$release" | jq -r --arg p "$pattern" '.assets[] | select(.name | test($p)) | .browser_download_url')
+    if [ -z "$url" ] || [ "$url" = "null" ]; then
+        echo "[7z] 未找到匹配 ${pattern} 的资源" >&2
+        return 1
+    fi
+    echo "[7z] 最新版本: ${version}"
+    tmp=$(mktemp -d)
+    curl -fsSL --retry 3 --retry-delay 5 -o "${tmp}/7z.tar.xz" "$url"
+    tar -xJf "${tmp}/7z.tar.xz" -C "$tmp"
+    install -m 755 "${tmp}/7zz" /usr/local/bin/7zz
+    ln -sf /usr/local/bin/7zz /usr/local/bin/7z
+    ln -sf /usr/local/bin/7zz /usr/local/bin/7za
+    rm -rf "$tmp"
+    echo "[7z] 安装完成"
+}
+
+# ------------------------------------------------------------
+# 1. 收集 apt 依赖（系统依赖 + 快捷软件依赖 + Python 运行时）
 # ------------------------------------------------------------
 py_pkgs=()
 if declare -p PYTHON_PACKAGES >/dev/null 2>&1; then
@@ -23,17 +62,19 @@ if declare -p PYTHON_PACKAGES >/dev/null 2>&1; then
     done
 fi
 
-# ------------------------------------------------------------
-# 2. 收集 apt 依赖（系统依赖 + 有 pip 依赖时的 Python 运行时）
-# ------------------------------------------------------------
 apt_pkgs=()
 if declare -p APT_PACKAGES >/dev/null 2>&1; then
     for p in "${APT_PACKAGES[@]}"; do
         if [ -n "$p" ]; then apt_pkgs+=("$p"); fi
     done
 fi
+# 有 pip 依赖时自动安装 Python
 if [ "${#py_pkgs[@]}" -gt 0 ]; then
     apt_pkgs+=(python3 python3-pip python-is-python3)
+fi
+# 快捷软件所需工具
+if [ "${INSTALL_7Z:-false}" = "true" ]; then
+    apt_pkgs+=(jq xz-utils)
 fi
 
 if [ "${#apt_pkgs[@]}" -gt 0 ]; then
@@ -41,6 +82,13 @@ if [ "${#apt_pkgs[@]}" -gt 0 ]; then
     apt-get update
     apt-get install -y --no-install-recommends "${apt_pkgs[@]}"
     rm -rf /var/lib/apt/lists/*
+fi
+
+# ------------------------------------------------------------
+# 2. 常用软件快捷安装
+# ------------------------------------------------------------
+if [ "${INSTALL_7Z:-false}" = "true" ]; then
+    install_7z
 fi
 
 # ------------------------------------------------------------

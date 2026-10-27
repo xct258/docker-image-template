@@ -13,6 +13,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 # 下载 install.sh / start.sh / app.conf 的仓库地址（由 CI 传入，必须提供）
 ARG REPO_URL
 
+# 目标架构（buildx 按平台自动注入，供快捷安装脚本选择对应架构的包）
+ARG TARGETARCH
+
 # ------------------------------------------------------------
 # 依赖安装 + 启动命令（合并为一个 RUN，减少镜像层数）
 #   构建不启用缓存（CI 的 no-cache），因此每次都重新下载最新文件

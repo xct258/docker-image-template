@@ -57,6 +57,7 @@ docker compose up -d
 | `IMAGE_TAG` | 镜像标签 |
 | `PLATFORMS` | 构建架构，如 `linux/amd64,linux/arm64` |
 | `APT_PACKAGES` | apt 系统依赖，**一行一个** |
+| `INSTALL_7Z` | 快捷安装 7-Zip（`true` / `false`，自动按架构下载最新版） |
 | `PYTHON_PACKAGES` | Python 依赖（pip 包，**一行一个**）；非空时自动安装 Python3 并 pip 安装 |
 | `CUSTOM_INSTALL` | 自定义安装命令数组，构建时执行一次（下载二进制、编译等） |
 | `START_PREPARE` | 启动前准备命令数组，容器每次启动时执行 |
