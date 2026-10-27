@@ -28,18 +28,41 @@ done
 export PATH
 
 # ------------------------------------------------------------
-# 0.1 步骤失败处理
-#   启动阶段的错误（端口占用、配置写错、依赖没装）重试不会自己好，
-#   反复拉起只会刷屏日志。这里打印是哪个脚本失败、退出码多少，然后退出。
-#   需要自动拉起就把 compose 的 restart 改成 on-failure:3（见 README）
+# 0.1 启动失败处理
+#   启动阶段的错误（端口占用、配置写错、依赖没装）重试不会自己好。
+#   「重试」是 Docker 的 restart 策略在拉起容器，不是脚本自己循环，
+#   所以脚本只负责判断：还要不要继续让它拉起。
+#   STARTUP_RETRY 指定最多重试几次（默认 0 = 不重试）：
+#     未超限 -> 退出，让 restart 策略重新拉起
+#     已超限 -> 打印原因后停住，不再重启，避免刷屏
+#   计数存在 /data/.startup-attempts，启动成功后自动清除
 # ------------------------------------------------------------
+STARTUP_RETRY=${STARTUP_RETRY:-0}
+case "$STARTUP_RETRY" in '' | *[!0-9]*) STARTUP_RETRY=0 ;; esac
+ATTEMPT_FILE=/data/.startup-attempts
+
+fail_start() {
+    local name=$1 code=$2 used=0
+    if [ -f "$ATTEMPT_FILE" ]; then
+        used=$(cat "$ATTEMPT_FILE" 2>/dev/null || echo 0)
+    fi
+    case "$used" in '' | *[!0-9]*) used=0 ;; esac
+    used=$((used + 1))
+    echo "$used" > "$ATTEMPT_FILE"
+
+    echo "[start] ${name} 失败（exit ${code}）" >&2
+    if [ "$used" -le "$STARTUP_RETRY" ]; then
+        echo "[start] 第 ${used}/${STARTUP_RETRY} 次重试：等待 restart 策略重新拉起" >&2
+        exit "$code"
+    fi
+    echo "[start] 不再重试（STARTUP_RETRY=${STARTUP_RETRY}）；修复后执行 docker compose restart" >&2
+    exec sleep infinity
+}
+
 run_step() {
     local name=$1 script=$2 code=0
     bash "$script" || code=$?
-    if [ "$code" -ne 0 ]; then
-        echo "[start] ${name} 失败（exit ${code}），容器退出；修复后执行 docker compose up -d" >&2
-        exit "$code"
-    fi
+    [ "$code" -eq 0 ] || fail_start "$name" "$code"
 }
 
 # ------------------------------------------------------------
@@ -62,6 +85,8 @@ fi
 
 # ------------------------------------------------------------
 # 3. 主进程：必须前台运行，docker stop 才能优雅退出
+#    走到这里说明启动成功，清掉失败计数
 # ------------------------------------------------------------
+rm -f "$ATTEMPT_FILE"
 echo "[start] main"
 exec bash "${DIR}/main.sh"

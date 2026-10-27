@@ -38,30 +38,42 @@
 - 标记在 `/data` 里，跟着数据卷走；没挂卷时等同于每个容器一次
 - 任一脚本失败（非 0 退出）容器就不会启动，日志里会打印**哪个脚本失败、退出码多少**
 
-## 启动失败与重启策略
+## 启动失败与重试
 
-启动阶段的错误（端口占用、配置写错、依赖没装）重试不会自己好，所以模板默认**失败即退出**：
+**重试是 Docker 干的，不是脚本在循环。** `restart: unless-stopped` 下容器一退出就会被拉起，所以端口占用这类错误会一遍遍刷日志。
+
+模板用一个变量决定「还让不让 Docker 继续拉起」：
 
 ```yaml
-    restart: "no"
+    environment:
+      # 启动失败后最多重试几次，0 = 不重试
+      STARTUP_RETRY: 0
 ```
 
-失败后的日志长这样，修复后重新 `docker compose up -d` 即可：
+`template/start.sh` 的逻辑：
+
+| `STARTUP_RETRY` | 失败时 |
+|---|---|
+| `0`（默认） | 打印失败脚本和退出码，然后**停住**（`sleep infinity`），不再重启 |
+| `N > 0` | 未超限时退出，让 restart 策略重新拉起；超过 N 次后停住 |
+
+失败日志长这样：
 
 ```
 [start] prepare
-[start] prepare 失败（exit 1），容器退出；修复后执行 docker compose up -d
+[start] prepare 失败（exit 1）
+[start] 不再重试（STARTUP_RETRY=0）；修复后执行 docker compose restart
 ```
 
-需要自动拉起时按场景改：
+计数在 `/data/.startup-attempts`，启动成功后自动删除。修好配置后：
 
-| `restart` | 行为 | 适合 |
-|---|---|---|
-| `"no"`（默认） | 任何退出都不重启 | 调试、启动失败不想刷屏 |
-| `on-failure:3` | 非 0 退出时最多重试 3 次 | 偶发网络问题，又不想无限循环 |
-| `unless-stopped` | 任何退出都拉起 | 主进程长期运行、由外部监控兜底；启动失败时会无限循环 |
+```bash
+docker compose restart
+```
 
-`docker compose up -d` 之后要改策略，改完再 `up -d` 会重建容器；只想重启不重建用 `docker compose restart`。
+容器停住时状态仍是 `Up`（进程是 `sleep infinity`），因为让它一直退出只会触发重启循环。判断启动是否成功，看日志里有没有 `[start] main`。
+
+`STARTUP_RETRY` 只管**启动阶段**；主进程跑起来之后再崩溃，仍由 `restart: unless-stopped` 拉起。
 
 ## 一次性准备
 
