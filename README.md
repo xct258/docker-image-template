@@ -6,9 +6,10 @@
 
 | 文件 | 作用 |
 |---|---|
-| `install.sh` | 依赖安装（apt 系统依赖 + 自定义依赖），构建时执行一次 |
-| `start.sh` | 容器启动时执行的命令 |
-| `image.conf` | 镜像名、构建架构 |
+| `app.conf` | **应用配置**：apt 依赖、自定义安装命令、启动前准备、启动命令 |
+| `image.conf` | 构建配置：镜像名、构建架构 |
+
+`install.sh` / `start.sh` 是固定模板，构建时从仓库下载，**无需修改**。
 
 ## 一次性准备
 
@@ -49,23 +50,24 @@ docker compose up -d
       - ./data:/data
 ```
 
-## start.sh 约定
+## app.conf 约定
 
-- 按顺序写命令即可
-- 最后一条命令必须 `exec`（前台运行），否则 `docker stop` 无法优雅退出
+| 配置项 | 作用 |
+|---|---|
+| `APT_PACKAGES` | apt 系统依赖，空格分隔 |
+| `CUSTOM_INSTALL` | 自定义安装命令数组，构建时执行一次（下载二进制、编译等） |
+| `START_PREPARE` | 启动前准备命令数组，容器每次启动时执行 |
+| `START_CMD` | 启动命令，必须前台运行（`exec`），否则 `docker stop` 无法优雅退出 |
+
 - 多个常驻进程请拆成多个容器，或用进程管理工具
-
-## install.sh 约定
-
-- 构建镜像时执行一次，负责所有依赖：系统依赖（apt 包）+ 自定义依赖（二进制、编译等）
-- apt 包名直接写在脚本里，装完记得清理 `apt` 缓存
-- 可用 `TARGETARCH` 区分 `amd64` / `arm64`
-- 记得清理临时文件，减小镜像体积
+- 自定义安装可用 `TARGETARCH` 区分 `amd64` / `arm64`
+- 装完依赖记得清理临时文件，减小镜像体积
 
 ## 说明
 
 - 构建流水线在 `.github/workflows/build-image.yml`，读取 `image.conf` 的配置，通常无需修改
-- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `install.sh` / `start.sh`
+- 构建前会自动校验：必备文件齐全、`app.conf` / `image.conf` 语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
+- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `app.conf` / `install.sh` / `start.sh`
 - 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
 - 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`
 - Actions 构建多架构时会自动安装 QEMU，无需本地处理

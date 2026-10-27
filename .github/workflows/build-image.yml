@@ -22,7 +22,27 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      # ------------------------------------------------------------
+      # 构建前校验：必备文件 + 配置文件语法
+      # ------------------------------------------------------------
+      - name: Validate config files
+        run: |
+          set -euo pipefail
+          # 1) 必备文件（构建时需从仓库下载）
+          for f in app.conf install.sh start.sh Dockerfile; do
+            [ -f "$f" ] || { echo "错误：仓库缺少 ${f}" >&2; exit 1; }
+          done
+          # 2) 脚本语法
+          bash -n app.conf install.sh start.sh
+          # 3) 配置可正常 source（无语法/格式错误）
+          source app.conf
+          echo "app.conf 校验通过"
+          source image.conf
+          [ -n "${IMAGE_REPO:-}" ] || { echo "错误：image.conf 缺少 IMAGE_REPO" >&2; exit 1; }
+          [ -n "${PLATFORMS:-}" ] || { echo "错误：image.conf 缺少 PLATFORMS" >&2; exit 1; }
+          echo "image.conf 校验通过"
 
       # ------------------------------------------------------------
       # 读取 image.conf，输出到 GITHUB_OUTPUT 供后续步骤使用
@@ -39,16 +59,28 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------
+      # 检查 Docker Hub 凭据是否已配置（未配置时给出明确提示）
+      # ------------------------------------------------------------
+      - name: Check Docker Hub secrets
+        env:
+          DOCKERACC: ${{ secrets.DOCKERACC }}
+          DOCKERPWD: ${{ secrets.DOCKERPWD }}
+        run: |
+          [ -n "${DOCKERACC:-}" ] || { echo "错误：未配置 Secrets → DOCKERACC" >&2; exit 1; }
+          [ -n "${DOCKERPWD:-}" ] || { echo "错误：未配置 Secrets → DOCKERPWD" >&2; exit 1; }
+          echo "Secrets 校验通过"
+
+      # ------------------------------------------------------------
       # 多架构构建准备：QEMU 模拟 + buildx
       # ------------------------------------------------------------
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login to Docker Hub
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           username: ${{ secrets.DOCKERACC }}
           password: ${{ secrets.DOCKERPWD }}
@@ -63,7 +95,7 @@ jobs:
           echo "sha_tag=${sha:0:7}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
@@ -74,6 +106,6 @@ jobs:
             ${{ steps.conf.outputs.image_repo }}:${{ steps.conf.outputs.image_tag }}
             ${{ steps.conf.outputs.image_repo }}:latest
             ${{ steps.conf.outputs.image_repo }}:sha-${{ steps.tags.outputs.sha_tag }}
-          # 启用 GitHub Actions 缓存，加速定时重建
+          # 启用 GitHub Actions 缓存，加速重复构建
           cache-from: type=gha
           cache-to: type=gha,mode=max

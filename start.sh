@@ -1,15 +1,29 @@
 #!/bin/bash
 # ============================================================
-# 容器启动命令：按顺序写要执行的命令
-#
-# 注意：最后一条命令必须前台运行（exec），
-#       否则 docker stop 无法把信号传给服务。
+# 容器启动命令（固定模板，无需修改）
+#   实际配置在 app.conf：START_PREPARE / START_CMD
 # ============================================================
 set -euo pipefail
 
-# 启动前的准备（示例）
-mkdir -p /data
+CONF=/app/app.conf
+if [ ! -f "$CONF" ]; then
+    echo "[start] 错误：未找到 ${CONF}" >&2
+    exit 1
+fi
+# shellcheck disable=SC1090
+source "$CONF"
 
-# 启动服务（改成你自己的命令）
-echo "[start] 模板占位进程，请修改 start.sh"
-exec sleep infinity
+# ------------------------------------------------------------
+# 1. 启动前准备
+# ------------------------------------------------------------
+mkdir -p /data
+if declare -p START_PREPARE >/dev/null 2>&1; then
+    for cmd in "${START_PREPARE[@]}"; do
+        [ -n "$cmd" ] && { echo "[start] 执行: ${cmd}"; eval "$cmd"; }
+    done
+fi
+
+# ------------------------------------------------------------
+# 2. 启动服务（必须前台运行，docker stop 才能优雅退出）
+# ------------------------------------------------------------
+exec ${START_CMD:-sleep infinity}
