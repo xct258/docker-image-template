@@ -56,10 +56,13 @@ docker compose up -d
 | `IMAGE_REPO` | 推送到 Docker Hub 的镜像名，如 `账号/镜像名` |
 | `IMAGE_TAG` | 镜像标签 |
 | `PLATFORMS` | 构建架构，如 `linux/amd64,linux/arm64` |
-| `APT_PACKAGES` | apt 系统依赖，空格分隔 |
+| `APT_PACKAGES` | apt 系统依赖，**一行一个** |
+| `PYTHON_PACKAGES` | Python 依赖（pip 包，**一行一个**）；非空时自动安装 Python3 并 pip 安装 |
 | `CUSTOM_INSTALL` | 自定义安装命令数组，构建时执行一次（下载二进制、编译等） |
 | `START_PREPARE` | 启动前准备命令数组，容器每次启动时执行 |
 | `START_CMD` | 启动命令，必须前台运行（`exec`），否则 `docker stop` 无法优雅退出 |
+
+- `PYTHON_PACKAGES` 非空时会自动安装 `python3`、`pip3`，并提供 `python` 命令
 
 - 多个常驻进程请拆成多个容器，或用进程管理工具
 - 自定义安装可用 `TARGETARCH` 区分 `amd64` / `arm64`
