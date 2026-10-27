@@ -4,6 +4,7 @@
 #   触发方式: 仅手动（Actions 页面 → Run workflow）
 #   推送一个标签: <repo>:<IMAGE_TAG>（app.conf 里配置，默认 latest）
 #   所需 Secrets: DOCKERACC（账号）/ DOCKERPWD（密码或 Access Token）
+#   下载地址固定到当前提交 SHA（raw 的分支地址有 CDN 缓存，可能拿到旧文件）
 # ============================================================
 name: Build and Push Docker Image
 
@@ -81,5 +82,5 @@ jobs:
           no-cache: true
           platforms: ${{ steps.conf.outputs.platforms }}
           build-args: |
-            REPO_URL=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
+            REPO_URL=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}
           tags: ${{ steps.conf.outputs.image_repo }}:${{ steps.conf.outputs.image_tag }}

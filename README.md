@@ -174,7 +174,7 @@ exec my-server --port "${PORT:-8080}"
 
 - 构建流水线在 `.github/workflows/build-image.yml`，读取 `install/app.conf` 的配置，通常无需修改
 - 构建前会自动校验：必备文件齐全、`install/` 与 `startup/` 下的脚本语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
-- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `install/app.conf` / `install/custom-install.sh` / `install/install.sh` 到 `/tmp`（安装完删除）、`startup/*.sh` 到 `/opt/startup`、`template/start.sh` 到 `/opt/start.sh`（`custom-install.sh` 缺失时自动跳过）
+- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前提交的 raw 地址，固定在 `github.sha`，避免分支地址的 CDN 缓存拿到旧文件），Dockerfile 用 `wget` 下载 `install/app.conf` / `install/custom-install.sh` / `install/install.sh` 到 `/tmp`（安装完删除）、`startup/*.sh` 到 `/opt/startup`、`template/start.sh` 到 `/opt/start.sh`（`custom-install.sh` 缺失时自动跳过）
 - 构建**完全不使用缓存**（CI 里 `no-cache: true`），每次构建都全新执行，保证 wget 下载到最新文件
 - 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
 - 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `template/Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`
