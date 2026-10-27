@@ -16,7 +16,11 @@ services:
       # APP_PASSWORD: 换成你的密码
       # 启动失败后最多重试几次（0 = 不重试，打印原因后停住等排查）
       STARTUP_RETRY: 0
-      # 日志文件目录（log.sh 写入，跟着数据卷走；不设时 start.sh 也会默认成 /data/logs）
+      # 每次重试前等几秒再退出，默认 5
+      # STARTUP_RETRY_DELAY: 5
+      # 额外加入 PATH 的目录，冒号分隔（默认已补 ~/.local/bin 等常见目录）
+      # EXTRA_PATH_DIRS: /opt/tools/bin:/workspace/bin
+      # 日志文件目录（log.sh 写入；挂载了 /data 才跟着数据卷保留，不设时 start.sh 也默认用 /data/logs）
       LOG_BASE_DIR: /data/logs
       # 每个脚本保留多少个日志文件，默认 30
       # LOG_MAX_FILES: 30

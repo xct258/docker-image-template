@@ -48,6 +48,8 @@
     environment:
       # 启动失败后最多重试几次，0 = 不重试
       STARTUP_RETRY: 0
+      # 每次重试前等几秒再退出（默认 5），避免立即重启刷屏
+      # STARTUP_RETRY_DELAY: 5
 ```
 
 `template/start.sh` 的逻辑：
@@ -55,9 +57,9 @@
 | `STARTUP_RETRY` | 失败时 |
 |---|---|
 | `0`（默认） | 记录失败脚本和退出码，然后**停住**（`sleep infinity`），不再重启 |
-| `N > 0` | 未超限时退出，让 restart 策略重新拉起；超过 N 次后停住 |
+| `N > 0` | 等 `STARTUP_RETRY_DELAY` 秒（默认 5）后退出，让 restart 策略重新拉起；超过 N 次后停住 |
 
-失败时的日志写进文件（`data/logs/...`），长这样：
+失败时的日志写进文件（容器内 `/data/logs/...`；宿主机要看 `data/logs/...` 需挂载 `./data`，见「部署」），长这样：
 
 ```
 [2026-10-28 05:24:13] [prepare] ❌ 端口 4099 被占用
@@ -71,10 +73,11 @@
 docker compose restart
 ```
 
-容器停住时状态仍是 `Up`（进程是 `sleep infinity`），因为让它一直退出只会触发重启循环。判断启动是否成功，看最新的 `start` 日志里有没有 `main`：
+容器停住时状态仍是 `Up`（进程是 `sleep infinity`），因为让它一直退出只会触发重启循环。判断启动是否走到主进程，看最新的 `start` 日志里有没有 `main`（这一行在 `exec main.sh` 前打印，只表示进入了主进程阶段；`main.sh` 里的命令是否真的起来了，以它自己的输出为准）：
 
 ```bash
-tail -3 "$(ls -t data/logs/start/*/*/*/*.log | head -1)"
+# 需要挂载 ./data:/data，否则日志在容器内，宿主机的 data/logs 是空的
+docker exec <容器名> tail -3 "$(docker exec <容器名> sh -c 'ls -t /data/logs/start/*/*/*/*.log | head -1')"
 ```
 
 `STARTUP_RETRY` 只管**启动阶段**；主进程跑起来之后再崩溃，仍由 `restart: unless-stopped` 拉起。
@@ -115,7 +118,7 @@ CI 的 Validate 步骤调用的是同一个脚本，本地过了线上基本不�
 
 - 必备文件是否齐全
 - `install/`、`startup/`、`template/` 下脚本的语法
-- `install/app.conf` 必填项（`IMAGE_REPO` / `PLATFORMS`）与开关取值（`true` / `false`）
+- `install/app.conf` 必填项（`IMAGE_REPO` / `IMAGE_TAG` / `PLATFORMS` / 非空的 `LOG_LIB_URL`）与开关取值（`true` / `false`）
 - Dockerfile 里 `wget` 的下载路径在仓库中是否真的存在、`startup/` 脚本列表是否一致
 - 三处路径是否对得上：`start.sh` 的 `DIR`、`install.sh` 的 `CONF`、`ENTRYPOINT` 指向的文件，都必须和 Dockerfile 里的下载位置一致
 - `docker-compose.yml` 的镜像名是否与 `install/app.conf` 的 `IMAGE_REPO:IMAGE_TAG` 一致（`container_name` 只提醒不校验）
@@ -141,6 +144,11 @@ docker compose up -d
     # network_mode: host
     ports:
       - "8080:80"
+```
+
+**数据目录默认没有挂载。** `/data` 里是 `once` 标记、重试计数和日志，不挂卷时它们随容器删除而丢失，重建容器后 `once.sh` 会再执行一次。需要保留就取消注释：
+
+```yaml
     volumes:
       - ./data:/data
 ```
@@ -168,7 +176,7 @@ docker compose up -d
 | `/opt/start.sh` | 启动入口（`ENTRYPOINT`） | 常驻 |
 | `/opt/startup/*.sh` | `prepare.sh` / `once.sh` / `main.sh` / `log.sh` | 常驻 |
 | `/tmp/app.conf`、`/tmp/custom-install.sh`、`/tmp/install.sh` | 构建期配置与安装脚本 | 安装完即删 |
-| `/data` | 数据卷挂载点 | 随卷保留 |
+| `/data` | 数据卷挂载点 | 挂载 `./data` 时随卷保留；默认 compose 未挂载，随容器层丢失 |
 
 所以 `working_dir` 可以放心指向 `/workspace`、`/app` 等任意目录，不会被镜像自带文件占用。
 
@@ -179,7 +187,7 @@ docker compose up -d
 | 内容 | 去哪 |
 |---|---|
 | 正常步骤（`prepare` / `once`） | 只写文件 |
-| 启动成功那一行 `main`、失败原因、重试次数 | 文件 + `docker logs` |
+| 进入主进程的那一行 `main`（不代表 `main.sh` 里的命令已经成功）、失败原因、重试次数 | 文件 + `docker logs` |
 
 ```bash
 log info "prepare"                  # 只进文件
@@ -187,11 +195,11 @@ log -f success "main"               # 也进 docker logs（每次启动一行）
 log -f error "prepare 失败（exit 1）"
 ```
 
-规则不是按级别自动判断，而是**调用时显式写 `-f`**：写了就代表「这条出问题时必须一眼看到」。所以正常启动时 `docker logs` 只有一行：
+规则不是按级别自动判断，而是**调用时显式写 `-f`**：写了就代表「这条出问题时必须一眼看到」。所以正常启动时 `docker logs` 只有一行（`main` 在 `exec main.sh` 之前打印）：
 
 ```
 $ docker logs opencode-cs
-[2026-10-28 05:31:14] [start] 🎉 main
+[2026-10-28 05:31:14] [start] 🎉 main（prepare/once 完成，交给 main.sh）
 ```
 
 失败时才把原因和重试情况带出来：
@@ -209,7 +217,7 @@ $ docker logs opencode-cs
 | `debug` / `success` / `info` | 正常流程 |
 | `warn` / `error` / `fatal` | 需要人看的问题 |
 
-文件位置（跟着数据卷走，重建容器不丢；compose 把 `./data` 挂到了 `/data`）：
+文件位置（容器内 `/data/logs`；挂载了 `./data:/data` 才会落到宿主机，且重建容器不丢。默认 compose 没挂载，日志随容器删除）：
 
 ```
 /data/logs/<脚本名>/2026/10/28/<脚本名>_HHMMSS_<pid>.log
@@ -218,7 +226,7 @@ $ docker logs opencode-cs
 
 每个脚本每次启动一个文件，`LOG_MAX_FILES`（默认 30）控制每个脚本保留多少个，超出的自动删。
 
-在宿主机上看最新的启动日志：
+在宿主机上看最新的启动日志（需先挂载 `./data:/data`；没挂载时用 `docker exec` 进容器看）：
 
 ```bash
 tail -f "$(ls -t data/logs/start/*/*/*/*.log | head -1)"
@@ -230,7 +238,7 @@ tail -f "$(ls -t data/logs/start/*/*/*/*.log | head -1)"
 | `LOG_MAX_FILES` | `30` | 每个脚本保留的日志文件数 |
 | `LOG_COLOR` | `auto` | `auto` 只在终端上色；`never` 永不上色；`always` 强制上色 |
 
-日志模块不在本仓库，构建时从 `xct258/common` 按提交 SHA 下载（见 `install/app.conf` 的 `LOG_LIB_URL`）。改了上游要同步更新那个 SHA，否则构建的还是旧版本。
+日志模块不在本仓库，构建时从 `xct258/common` 按提交 SHA 下载（见 `install/app.conf` 的 `LOG_LIB_URL`）。改了上游要同步更新那个 SHA，否则构建的还是旧版本。**这个地址不能留空**：留空时镜像里没有 `log.sh`，`template/start.sh` 会打印错误并 `exit 1`，`prepare.sh` / `once.sh` 也无条件 source 它。
 
 ## 环境变量
 
@@ -262,7 +270,7 @@ exec my-server --port "${PORT:-8080}"
 | `INSTALL_7Z` | 快捷安装 7-Zip（`true` / `false`，自动按架构下载最新版） |
 | `PYTHON_PACKAGES` | Python 依赖（pip 包，**一行一个**）；非空时自动安装 Python3 并 pip 安装 |
 | `INSTALL_CUSTOM` | 是否执行 `install/custom-install.sh`（`true` / `false`），构建时执行一次 |
-| `LOG_LIB_URL` | 日志模块 `log.sh` 的下载地址，固定到提交 SHA；留空则镜像里不带日志模块 |
+| `LOG_LIB_URL` | 日志模块 `log.sh` 的下载地址，固定到提交 SHA。**不能留空**：留空则镜像里没有 `log.sh`，容器启动直接失败 |
 
 - `PYTHON_PACKAGES` 非空时会自动安装 `python3`、`pip3`，并提供 `python` 命令
 
@@ -271,6 +279,7 @@ exec my-server --port "${PORT:-8080}"
 - 项目命名不是 `amd64` / `arm64` 时用脚本里的 `arch_name` 映射，如 `arch_name x64 aarch64`
 - `custom-install.sh` 里装完依赖记得清理临时文件，减小镜像体积
 - 安装器把二进制放进 `$HOME` 下的 `bin` 目录（如 `~/.opencode/bin`、`~/.local/bin`）时，`template/start.sh` 启动时会自动把这些目录加入 `PATH`。因为这些安装器只把 PATH 写进 `~/.bashrc` / `~/.profile`，而容器启动用的是非交互 shell，不会加载它们——不补 PATH 的话 `startup/*.sh` 里会报「命令未找到」
+- 自动补的目录是固定白名单：`~/.local/bin`、`~/bin`、`~/.opencode/bin`、`~/.bun/bin`、`~/.cargo/bin`。其它位置用 `EXTRA_PATH_DIRS` 追加，冒号分隔（如 `EXTRA_PATH_DIRS=/opt/tools/bin:/workspace/bin`）。不会全盘扫描 `$HOME`，避免 `node_modules/.bin` 拖慢启动、遮蔽系统命令
 
 ## 说明
 

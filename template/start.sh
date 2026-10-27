@@ -35,14 +35,29 @@ fi
 # 0. 补全 PATH
 #    安装器（opencode / bun / uv 等）把可执行文件放在 $HOME 下的 bin 目录，
 #    只把该目录写进 ~/.bashrc / ~/.profile；容器启动用的是非交互 shell，
-#    不会加载这些文件，直接用命令会「未找到」。这里把目录加进 PATH，
-#    命令就能直接运行。
+#    不会加载这些文件，直接用命令会「未找到」。这里只补常见目录：
+#    不做全盘 find，避免 node_modules/.bin 之类拖慢启动、遮蔽系统命令。
+#    其它目录用 EXTRA_PATH_DIRS 追加，冒号分隔，
+#    如 EXTRA_PATH_DIRS=/opt/tools/bin:/workspace/bin
 # ------------------------------------------------------------
-mapfile -t bin_dirs < <(find "${HOME:-/root}" -xdev -path '*/bin/*' \
-    -type f -perm -u+x -printf '%h\n' 2>/dev/null | sort -u)
-for dir in "${bin_dirs[@]}"; do
-    PATH="${dir}:${PATH}"
+path_dirs=(
+    "${HOME:-/root}/.local/bin"
+    "${HOME:-/root}/bin"
+    "${HOME:-/root}/.opencode/bin"
+    "${HOME:-/root}/.bun/bin"
+    "${HOME:-/root}/.cargo/bin"
+)
+if [ -n "${EXTRA_PATH_DIRS:-}" ]; then
+    IFS=: read -r -a extra_dirs <<<"$EXTRA_PATH_DIRS"
+    path_dirs+=("${extra_dirs[@]}")
+fi
+path_prefix=""
+for dir in "${path_dirs[@]}"; do
+    [ -n "$dir" ] && [ -d "$dir" ] || continue
+    case ":${path_prefix}:${PATH}:" in *":${dir}:"*) continue ;; esac
+    path_prefix="${path_prefix:+${path_prefix}:}${dir}"
 done
+[ -z "$path_prefix" ] || PATH="${path_prefix}:${PATH}"
 export PATH
 
 # ------------------------------------------------------------
@@ -51,12 +66,14 @@ export PATH
 #   「重试」是 Docker 的 restart 策略在拉起容器，不是脚本自己循环，
 #   所以脚本只负责判断：还要不要继续让它拉起。
 #   STARTUP_RETRY 指定最多重试几次（默认 0 = 不重试）：
-#     未超限 -> 退出，让 restart 策略重新拉起
+#     未超限 -> 等待 STARTUP_RETRY_DELAY 秒后退出，让 restart 策略重新拉起
 #     已超限 -> 打印原因后停住，不再重启，避免刷屏
 #   计数存在 /data/.startup-attempts，启动成功后自动清除
 # ------------------------------------------------------------
 STARTUP_RETRY=${STARTUP_RETRY:-0}
 case "$STARTUP_RETRY" in '' | *[!0-9]*) STARTUP_RETRY=0 ;; esac
+STARTUP_RETRY_DELAY=${STARTUP_RETRY_DELAY:-5}
+case "$STARTUP_RETRY_DELAY" in '' | *[!0-9]*) STARTUP_RETRY_DELAY=5 ;; esac
 ATTEMPT_FILE=/data/.startup-attempts
 
 fail_start() {
@@ -70,7 +87,9 @@ fail_start() {
 
     log -f error "${name} 失败（exit ${code}）"
     if [ "$used" -le "$STARTUP_RETRY" ]; then
-        log -f warn "第 ${used}/${STARTUP_RETRY} 次重试：等待 restart 策略重新拉起"
+        log -f warn "第 ${used}/${STARTUP_RETRY} 次重试：${STARTUP_RETRY_DELAY}s 后退出，等待 restart 策略重新拉起"
+        # 不在脚本里循环：退出后由 Docker 拉起。先等一会儿，避免立即重启刷屏
+        sleep "$STARTUP_RETRY_DELAY"
         exit "$code"
     fi
     log -f error "不再重试（STARTUP_RETRY=${STARTUP_RETRY}）；修复后执行 docker compose restart"
@@ -103,8 +122,10 @@ fi
 
 # ------------------------------------------------------------
 # 3. 主进程：必须前台运行，docker stop 才能优雅退出
-#    走到这里说明启动成功，清掉失败计数
+#    走到这里说明 prepare / once 都成功，清掉失败计数
+#    注意：这行只代表「交给 main.sh」，main.sh 里的命令是否真的
+#    起来了要看它自己的输出
 # ------------------------------------------------------------
 rm -f "$ATTEMPT_FILE"
-log -f success "main"
+log -f success "main（prepare/once 完成，交给 main.sh）"
 exec bash "${DIR}/main.sh"

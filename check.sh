@@ -146,7 +146,7 @@ else
     fi
 fi
 if [ -z "${LOG_LIB_URL:-}" ]; then
-    warn "app.conf 的 LOG_LIB_URL 为空，镜像里不会有 log.sh（启动脚本会退化成只用 echo）"
+    bad "LOG_LIB_URL 为空：镜像里没有 log.sh，容器启动会直接失败（start.sh exit 1）"
 else
     ok "LOG_LIB_URL 已配置（固定到提交 SHA）"
 fi
