@@ -6,7 +6,7 @@
 # ============================================================
 set -euo pipefail
 
-# 示例：设置 opencode 密码
-# [ -z "${OPENCODE_PASSWORD:-}" ] || opencode service set password "$OPENCODE_PASSWORD"
+# 示例：把环境变量落到 /data，供主进程读取
+# [ -z "${APP_PASSWORD:-}" ] || printf '%s\n' "$APP_PASSWORD" > /data/password
 
 echo "[prepare] 完成"

@@ -76,6 +76,7 @@ CI 的 Validate 步骤调用的是同一个脚本，本地过了线上基本不�
 - `install/`、`startup/`、`template/` 下脚本的语法
 - `install/app.conf` 必填项（`IMAGE_REPO` / `PLATFORMS`）与开关取值（`true` / `false`）
 - Dockerfile 里 `wget` 的下载路径在仓库中是否真的存在、`startup/` 脚本列表是否一致
+- 三处路径是否对得上：`start.sh` 的 `DIR`、`install.sh` 的 `CONF`、`ENTRYPOINT` 指向的文件，都必须和 Dockerfile 里的下载位置一致
 - `docker-compose.yml` 的镜像名是否与 `install/app.conf` 的 `IMAGE_REPO:IMAGE_TAG` 一致（`container_name` 只提醒不校验）
 - `docker-compose.yml` 与 workflow 的 YAML 解析
 - 装了 `shellcheck` / `hadolint` 时顺带检查（只提示，不影响结果）
@@ -143,12 +144,11 @@ docker compose up -d
 改完 `docker compose up -d` 生效，不用重建镜像。容器里的脚本/程序按变量名读取：
 
 ```bash
-# startup/prepare.sh
-[ -z "${OPENCODE_PASSWORD:-}" ] || opencode service set password "$OPENCODE_PASSWORD"
-
 # startup/main.sh
-exec opencode serve --port "${PORT:-8080}"
+exec my-server --port "${PORT:-8080}"
 ```
+
+`docker compose config` 可以直接检查环境变量有没有拼错。
 
 ## install/app.conf 约定
 
@@ -175,7 +175,7 @@ exec opencode serve --port "${PORT:-8080}"
 - 构建流水线在 `.github/workflows/build-image.yml`，读取 `install/app.conf` 的配置，通常无需修改
 - 构建前会自动校验：必备文件齐全、`install/` 与 `startup/` 下的脚本语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
 - 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `install/app.conf` / `install/custom-install.sh` / `install/install.sh` 到 `/tmp`（安装完删除）、`startup/*.sh` 到 `/opt/startup`、`template/start.sh` 到 `/opt/start.sh`（`custom-install.sh` 缺失时自动跳过）
-- 构建**完全不使用缓存**（CI 构建设 `no-cache`），每次构建都全新执行，保证 wget 下载到最新文件
+- 构建**完全不使用缓存**（CI 里 `no-cache: true`），每次构建都全新执行，保证 wget 下载到最新文件
 - 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
 - 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `template/Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`
 - 构建时 `wget` 报证书/SSL 错误（exit 5）：基础镜像缺 `ca-certificates`，Dockerfile 已固定一起安装；换了自定义基础镜像仍报错时，检查该镜像的 `/etc/ssl/certs/ca-certificates.crt`

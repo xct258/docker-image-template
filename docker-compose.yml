@@ -13,7 +13,7 @@ services:
     environment:
       TZ: Asia/Shanghai
       # PORT: 8080
-      # OPENCODE_PASSWORD: 换成你的密码
+      # APP_PASSWORD: 换成你的密码
     # host 网络下 ports 不生效
     # ports:
     #   - "8080:80"

@@ -4,6 +4,7 @@
 #   apt / pip 之外的操作写在这里：下载二进制、编译安装等
 #   由 install.sh 在 apt / pip 之后调用
 #   装到 $HOME 下 bin 目录的可执行文件，运行期会自动加入 PATH（见 template/start.sh）
+#   下面示例用 curl / tar，app.conf 的 APT_PACKAGES 里要有 curl（默认已包含）
 #   不需要时把 app.conf 的 INSTALL_CUSTOM 设为 false
 # ============================================================
 set -euo pipefail

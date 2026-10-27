@@ -76,7 +76,7 @@ if [ "${#py_pkgs[@]}" -gt 0 ]; then
 fi
 # 快捷软件所需工具
 if [ "${INSTALL_7Z:-false}" = "true" ]; then
-    apt_pkgs+=(jq xz-utils)
+    apt_pkgs+=(curl jq xz-utils)
 fi
 
 if [ "${#apt_pkgs[@]}" -gt 0 ]; then
