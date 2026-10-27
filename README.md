@@ -141,6 +141,7 @@ exec opencode serve --port "${PORT:-8080}"
 - apt / pip 装不了的东西写进 `install/custom-install.sh`，脚本内可用 `${TARGETARCH}` 区分 `amd64` / `arm64`
 - 项目命名不是 `amd64` / `arm64` 时用脚本里的 `arch_name` 映射，如 `arch_name x64 aarch64`
 - `custom-install.sh` 里装完依赖记得清理临时文件，减小镜像体积
+- 安装器把二进制放进 `$HOME` 下的 `bin` 目录（如 `~/.opencode/bin`、`~/.local/bin`）时，`template/start.sh` 启动时会自动把这些目录加入 `PATH`。因为这些安装器只把 PATH 写进 `~/.bashrc` / `~/.profile`，而容器启动用的是非交互 shell，不会加载它们——不补 PATH 的话 `startup/*.sh` 里会报「命令未找到」
 
 ## 说明
 

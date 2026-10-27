@@ -14,6 +14,20 @@ ONCE_MARK=/data/.startup-once.done
 mkdir -p /data
 
 # ------------------------------------------------------------
+# 0. 补全 PATH
+#    安装器（opencode / bun / uv 等）把可执行文件放在 $HOME 下的 bin 目录，
+#    只把该目录写进 ~/.bashrc / ~/.profile；容器启动用的是非交互 shell，
+#    不会加载这些文件，直接用命令会「未找到」。这里把目录加进 PATH，
+#    命令就能直接运行。
+# ------------------------------------------------------------
+mapfile -t bin_dirs < <(find "${HOME:-/root}" -xdev -path '*/bin/*' \
+    -type f -perm -u+x -printf '%h\n' 2>/dev/null | sort -u)
+for dir in "${bin_dirs[@]}"; do
+    PATH="${dir}:${PATH}"
+done
+export PATH
+
+# ------------------------------------------------------------
 # 1. 启动前的准备：每次启动都执行
 # ------------------------------------------------------------
 echo "[start] prepare"
