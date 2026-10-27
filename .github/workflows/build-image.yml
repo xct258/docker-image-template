@@ -31,11 +31,12 @@ jobs:
         run: |
           set -euo pipefail
           # 1) 必备文件（构建时需从仓库下载）
-          for f in app.conf template/install.sh template/start.sh template/Dockerfile; do
+          for f in app.conf startup/prepare.sh startup/once.sh startup/main.sh \
+                   template/install.sh template/start.sh template/Dockerfile; do
             [ -f "$f" ] || { echo "错误：仓库缺少 ${f}" >&2; exit 1; }
           done
           # 2) 脚本语法
-          bash -n app.conf template/install.sh template/start.sh
+          bash -n app.conf startup/*.sh template/install.sh template/start.sh
           # 3) 配置可正常 source（无语法/格式错误），并检查必填项
           source app.conf
           [ -n "${IMAGE_REPO:-}" ] || { echo "错误：app.conf 缺少 IMAGE_REPO" >&2; exit 1; }

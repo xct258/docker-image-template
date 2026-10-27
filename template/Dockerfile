@@ -18,7 +18,7 @@ ARG REPO_URL
 ARG TARGETARCH
 
 # ------------------------------------------------------------
-# 依赖安装 + 启动命令（合并为一个 RUN，减少镜像层数）
+# 下载配置与启动脚本 + 依赖安装（合并为一个 RUN，减少镜像层数）
 #   构建不启用缓存（CI 的 no-cache），因此每次都重新下载最新文件
 # ------------------------------------------------------------
 RUN set -eux; \
@@ -32,6 +32,10 @@ RUN set -eux; \
     if ! wget -qO /app/custom-install.sh "${REPO_URL}/custom-install.sh"; then \
         rm -f /app/custom-install.sh; \
     fi; \
+    mkdir -p /app/startup; \
+    for f in prepare.sh once.sh main.sh; do \
+        wget -qO "/app/startup/${f}" "${REPO_URL}/startup/${f}"; \
+    done; \
     wget -qO /tmp/install.sh "${REPO_URL}/template/install.sh"; \
     chmod +x /tmp/install.sh; \
     /tmp/install.sh; \

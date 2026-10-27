@@ -1,29 +1,38 @@
 #!/bin/bash
 # ============================================================
-# 容器启动命令（固定模板，无需修改）
-#   实际配置在 app.conf：START_PREPARE / START_CMD
+# 容器启动入口（固定模板，无需修改）
+#   1. startup/prepare.sh  每次启动容器都执行（重启也执行）
+#   2. startup/once.sh     只执行一次（标记文件 /data/.startup-once.done）
+#   3. startup/main.sh     容器主进程（exec 前台运行）
+#   三个脚本在仓库 startup/ 目录，构建时下载到 /app/startup
 # ============================================================
 set -euo pipefail
 
-CONF=/app/app.conf
-if [ ! -f "$CONF" ]; then
-    echo "[start] 错误：未找到 ${CONF}" >&2
-    exit 1
-fi
-# shellcheck disable=SC1090
-source "$CONF"
+DIR=/app/startup
+ONCE_MARK=/data/.startup-once.done
 
-# ------------------------------------------------------------
-# 1. 启动前准备
-# ------------------------------------------------------------
 mkdir -p /data
-if declare -p START_PREPARE >/dev/null 2>&1; then
-    for cmd in "${START_PREPARE[@]}"; do
-        [ -n "$cmd" ] && { echo "[start] 执行: ${cmd}"; eval "$cmd"; }
-    done
+
+# ------------------------------------------------------------
+# 1. 启动前的准备：每次启动都执行
+# ------------------------------------------------------------
+echo "[start] prepare"
+bash "${DIR}/prepare.sh"
+
+# ------------------------------------------------------------
+# 2. 只执行一次：初始化数据等，成功后写标记，之后不再执行
+#    要重新执行就删掉标记文件；标记在 /data 里，随数据卷保留
+# ------------------------------------------------------------
+if [ -f "$ONCE_MARK" ]; then
+    echo "[start] once 已执行过，跳过"
+else
+    echo "[start] once"
+    bash "${DIR}/once.sh"
+    touch "$ONCE_MARK"
 fi
 
 # ------------------------------------------------------------
-# 2. 启动服务（必须前台运行，docker stop 才能优雅退出）
+# 3. 主进程：必须前台运行，docker stop 才能优雅退出
 # ------------------------------------------------------------
-exec ${START_CMD:-sleep infinity}
+echo "[start] main"
+exec bash "${DIR}/main.sh"
