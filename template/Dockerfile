@@ -1,9 +1,10 @@
 # ============================================================
-# 通用镜像模板
-#   配置文件 -> app.conf（唯一需要修改的文件）
-#   依赖安装 -> install.sh（固定模板，读取 app.conf）
-#   启动命令 -> start.sh（固定模板，读取 app.conf）
-#   三个文件构建时从仓库下载（REPO_URL 由 CI 传入）
+# 通用镜像模板（固定文件，无需修改）
+#   配置 -> 仓库根目录 app.conf / custom-install.sh
+#   自定义安装 -> custom-install.sh（可选，apt / pip 之外的操作）
+#   依赖安装 -> template/install.sh（读取 app.conf）
+#   启动命令 -> template/start.sh（读取 app.conf）
+#   以上文件构建时从仓库下载（REPO_URL 由 CI 传入）
 # ============================================================
 
 FROM xct258/debian-cn:latest
@@ -28,11 +29,14 @@ RUN set -eux; \
         rm -rf /var/lib/apt/lists/*; \
     fi; \
     wget -qO /app/app.conf "${REPO_URL}/app.conf"; \
-    wget -qO /tmp/install.sh "${REPO_URL}/install.sh"; \
+    if ! wget -qO /app/custom-install.sh "${REPO_URL}/custom-install.sh"; then \
+        rm -f /app/custom-install.sh; \
+    fi; \
+    wget -qO /tmp/install.sh "${REPO_URL}/template/install.sh"; \
     chmod +x /tmp/install.sh; \
     /tmp/install.sh; \
     rm -f /tmp/install.sh; \
-    wget -qO /start.sh "${REPO_URL}/start.sh"; \
+    wget -qO /start.sh "${REPO_URL}/template/start.sh"; \
     chmod +x /start.sh
 
 WORKDIR /app

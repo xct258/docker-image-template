@@ -1,7 +1,8 @@
 #!/bin/bash
 # ============================================================
 # 依赖安装（固定模板，无需修改）
-#   配置在 app.conf：APT_PACKAGES / INSTALL_7Z / PYTHON_PACKAGES / CUSTOM_INSTALL
+#   配置在 app.conf：APT_PACKAGES / INSTALL_7Z / PYTHON_PACKAGES / INSTALL_CUSTOM
+#   自定义安装写在同一仓库根目录的 custom-install.sh
 # ============================================================
 set -euo pipefail
 
@@ -105,15 +106,19 @@ if [ "${#py_pkgs[@]}" -gt 0 ]; then
 fi
 
 # ------------------------------------------------------------
-# 4. 自定义安装命令
+# 4. 自定义安装脚本（apt / pip 之外的操作）
+#    app.conf 的 INSTALL_CUSTOM=true 时执行 /app/custom-install.sh
 # ------------------------------------------------------------
-if declare -p CUSTOM_INSTALL >/dev/null 2>&1; then
-    for cmd in "${CUSTOM_INSTALL[@]}"; do
-        if [ -n "$cmd" ]; then
-            echo "[install] 执行: ${cmd}"
-            eval "$cmd"
-        fi
-    done
+if [ "${INSTALL_CUSTOM:-false}" = "true" ]; then
+    script=/app/custom-install.sh
+    if [ ! -f "$script" ]; then
+        echo "[install] 错误：INSTALL_CUSTOM=true，但未找到 ${script}" >&2
+        exit 1
+    fi
+    echo "[install] 执行自定义安装脚本: ${script}"
+    # 传给脚本，脚本内可直接用 ${TARGETARCH}
+    export TARGETARCH="$target_arch"
+    bash "$script"
 fi
 
 echo "[install] 依赖安装完成"

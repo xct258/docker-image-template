@@ -31,15 +31,20 @@ jobs:
         run: |
           set -euo pipefail
           # 1) 必备文件（构建时需从仓库下载）
-          for f in app.conf install.sh start.sh Dockerfile; do
+          for f in app.conf template/install.sh template/start.sh template/Dockerfile; do
             [ -f "$f" ] || { echo "错误：仓库缺少 ${f}" >&2; exit 1; }
           done
           # 2) 脚本语法
-          bash -n app.conf install.sh start.sh
+          bash -n app.conf template/install.sh template/start.sh
           # 3) 配置可正常 source（无语法/格式错误），并检查必填项
           source app.conf
           [ -n "${IMAGE_REPO:-}" ] || { echo "错误：app.conf 缺少 IMAGE_REPO" >&2; exit 1; }
           [ -n "${PLATFORMS:-}" ] || { echo "错误：app.conf 缺少 PLATFORMS" >&2; exit 1; }
+          # 4) 启用自定义安装时，脚本必须存在且语法正确
+          if [ "${INSTALL_CUSTOM:-false}" = "true" ]; then
+            [ -f custom-install.sh ] || { echo "错误：INSTALL_CUSTOM=true，但仓库缺少 custom-install.sh" >&2; exit 1; }
+            bash -n custom-install.sh
+          fi
           echo "app.conf 校验通过"
 
       # ------------------------------------------------------------
@@ -96,6 +101,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          file: template/Dockerfile
           push: true
           # 不使用任何构建缓存，每次构建全新执行，保证下载最新文件
           no-cache: true

@@ -2,13 +2,21 @@
 
 只通过 GitHub Actions 构建：**改文件 → push → 在 Actions 页面手动触发构建多架构镜像并推送 Docker Hub**，本地不需要安装 Docker。
 
-## 需要改的文件
+## 目录结构
 
-| 文件 | 作用 |
-|---|---|
-| `app.conf` | **唯一配置文件**：构建配置（镜像名、标签、架构）+ 应用配置（依赖、启动命令） |
+```
+.
+├── app.conf              # 唯一配置：镜像名/架构/依赖/启动命令
+├── custom-install.sh     # 可选：apt / pip 之外的操作
+├── template/             # 固定模板，无需修改
+│   ├── Dockerfile
+│   ├── install.sh        # 依赖安装（读取 app.conf）
+│   └── start.sh          # 容器启动（读取 app.conf）
+├── docker-compose.yml    # 部署示例
+└── .github/workflows/build-image.yml
+```
 
-`install.sh` / `start.sh` 是固定模板，构建时从仓库下载，**无需修改**。
+`template/` 下的文件构建时从仓库下载，**不需要改**；自己的安装步骤写在 `custom-install.sh`，其余都改 `app.conf`。
 
 ## 一次性准备
 
@@ -59,22 +67,22 @@ docker compose up -d
 | `APT_PACKAGES` | apt 系统依赖，**一行一个** |
 | `INSTALL_7Z` | 快捷安装 7-Zip（`true` / `false`，自动按架构下载最新版） |
 | `PYTHON_PACKAGES` | Python 依赖（pip 包，**一行一个**）；非空时自动安装 Python3 并 pip 安装 |
-| `CUSTOM_INSTALL` | 自定义安装命令数组，构建时执行一次（下载二进制、编译等） |
+| `INSTALL_CUSTOM` | 是否执行 `custom-install.sh`（`true` / `false`），构建时执行一次 |
 | `START_PREPARE` | 启动前准备命令数组，容器每次启动时执行 |
 | `START_CMD` | 启动命令，必须前台运行（`exec`），否则 `docker stop` 无法优雅退出 |
 
 - `PYTHON_PACKAGES` 非空时会自动安装 `python3`、`pip3`，并提供 `python` 命令
 
 - 多个常驻进程请拆成多个容器，或用进程管理工具
-- 自定义安装可用 `TARGETARCH` 区分 `amd64` / `arm64`
-- 装完依赖记得清理临时文件，减小镜像体积
+- apt / pip 装不了的东西写进 `custom-install.sh`，脚本内可用 `${TARGETARCH}` 区分 `amd64` / `arm64`
+- `custom-install.sh` 里装完依赖记得清理临时文件，减小镜像体积
 
 ## 说明
 
 - 构建流水线在 `.github/workflows/build-image.yml`，读取 `app.conf` 的配置，通常无需修改
-- 构建前会自动校验：必备文件齐全、`app.conf` 语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
-- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `app.conf` / `install.sh` / `start.sh`
+- 构建前会自动校验：必备文件齐全、`app.conf` / `custom-install.sh` 语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
+- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `app.conf` / `custom-install.sh` / `template/install.sh` / `template/start.sh`（`custom-install.sh` 缺失时自动跳过）
 - 构建**完全不使用缓存**（CI 构建设 `no-cache`），每次构建都全新执行，保证 wget 下载到最新文件
 - 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
-- 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`
+- 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `template/Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`
 - Actions 构建多架构时会自动安装 QEMU，无需本地处理
