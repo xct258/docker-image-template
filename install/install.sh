@@ -1,8 +1,8 @@
 #!/bin/bash
 # ============================================================
-# 依赖安装（固定模板，无需修改）
-#   配置在 app.conf：APT_PACKAGES / INSTALL_7Z / PYTHON_PACKAGES / INSTALL_CUSTOM
-#   自定义安装写在同一仓库根目录的 custom-install.sh
+# 依赖安装（构建时执行一次）
+#   读取 /app/app.conf：APT_PACKAGES / INSTALL_7Z / PYTHON_PACKAGES / INSTALL_CUSTOM
+#   自定义安装脚本 /app/custom-install.sh（仓库里同在 install/ 目录）
 # ============================================================
 set -euo pipefail
 

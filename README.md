@@ -6,16 +6,18 @@
 
 ```
 .
-├── app.conf              # 配置：镜像名/架构/依赖
-├── custom-install.sh     # 可选：构建时执行一次（apt / pip 之外）
-├── startup/              # 启动流程，按需修改
+├── install/              # 构建时：装依赖
+│   ├── app.conf          # 配置：镜像名/架构/依赖
+│   ├── install.sh        # apt / pip / 快捷安装
+│   └── custom-install.sh # 可选：apt / pip 之外的操作
+├── startup/              # 运行时：启动流程
 │   ├── prepare.sh        # 每次启动都执行
 │   ├── once.sh           # 只执行一次
 │   └── main.sh           # 容器主进程
 ├── template/             # 固定模板，无需修改
 │   ├── Dockerfile
-│   ├── install.sh        # 依赖安装（读取 app.conf）
 │   └── start.sh          # 依次调用 startup/ 下的三个脚本
+├── check.sh              # 本地自查（push 前跑，CI 也用）
 ├── docker-compose.yml    # 部署示例
 └── .github/workflows/build-image.yml
 ```
@@ -38,7 +40,7 @@
 
 ## 一次性准备
 
-1. 修改 `app.conf` 里的 `IMAGE_REPO`（例如 `你的账号/镜像名`）
+1. 修改 `install/app.conf` 里的 `IMAGE_REPO`（例如 `你的账号/镜像名`）
 2. 仓库 Settings → Secrets and variables → Actions，添加：
    - `DOCKERACC`：Docker Hub 账号
    - `DOCKERPWD`：Docker Hub 密码或 Access Token
@@ -59,6 +61,23 @@
 ```
 
 构建失败或日志都在仓库的 Actions 页面查看。
+
+## 本地自查
+
+push 前跑一遍（不需要 Docker，只做静态检查）：
+
+```bash
+bash check.sh
+```
+
+CI 的 Validate 步骤调用的是同一个脚本，本地过了线上基本不会因为配置问题失败。查到的问题包括：
+
+- 必备文件是否齐全
+- `install/`、`startup/`、`template/` 下脚本的语法
+- `install/app.conf` 必填项（`IMAGE_REPO` / `PLATFORMS`）与开关取值（`true` / `false`）
+- Dockerfile 里 `wget` 的下载路径在仓库中是否真的存在、`startup/` 脚本列表是否一致
+- `docker-compose.yml` 与 workflow 的 YAML 解析
+- 装了 `shellcheck` / `hadolint` 时顺带检查（只提示，不影响结果）
 
 ## 部署
 
@@ -95,7 +114,7 @@ docker compose up -d
 exec opencode serve --port "${PORT:-8080}"
 ```
 
-## app.conf 约定
+## install/app.conf 约定
 
 | 配置项 | 作用 |
 |---|---|
@@ -105,20 +124,20 @@ exec opencode serve --port "${PORT:-8080}"
 | `APT_PACKAGES` | apt 系统依赖，**一行一个** |
 | `INSTALL_7Z` | 快捷安装 7-Zip（`true` / `false`，自动按架构下载最新版） |
 | `PYTHON_PACKAGES` | Python 依赖（pip 包，**一行一个**）；非空时自动安装 Python3 并 pip 安装 |
-| `INSTALL_CUSTOM` | 是否执行 `custom-install.sh`（`true` / `false`），构建时执行一次 |
+| `INSTALL_CUSTOM` | 是否执行 `install/custom-install.sh`（`true` / `false`），构建时执行一次 |
 
 - `PYTHON_PACKAGES` 非空时会自动安装 `python3`、`pip3`，并提供 `python` 命令
 
 - 多个常驻进程请拆成多个容器，或用进程管理工具；`main.sh` 必须前台运行（`exec`），否则 `docker stop` 无法优雅退出
-- apt / pip 装不了的东西写进 `custom-install.sh`，脚本内可用 `${TARGETARCH}` 区分 `amd64` / `arm64`
+- apt / pip 装不了的东西写进 `install/custom-install.sh`，脚本内可用 `${TARGETARCH}` 区分 `amd64` / `arm64`
 - 项目命名不是 `amd64` / `arm64` 时用脚本里的 `arch_name` 映射，如 `arch_name x64 aarch64`
 - `custom-install.sh` 里装完依赖记得清理临时文件，减小镜像体积
 
 ## 说明
 
-- 构建流水线在 `.github/workflows/build-image.yml`，读取 `app.conf` 的配置，通常无需修改
-- 构建前会自动校验：必备文件齐全、`app.conf` / `custom-install.sh` 语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
-- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `app.conf` / `custom-install.sh` / `startup/*.sh` / `template/install.sh` / `template/start.sh`（`custom-install.sh` 缺失时自动跳过）
+- 构建流水线在 `.github/workflows/build-image.yml`，读取 `install/app.conf` 的配置，通常无需修改
+- 构建前会自动校验：必备文件齐全、`install/` 与 `startup/` 下的脚本语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
+- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `install/app.conf` / `install/custom-install.sh` / `install/install.sh` / `startup/*.sh` / `template/start.sh`（`custom-install.sh` 缺失时自动跳过）
 - 构建**完全不使用缓存**（CI 构建设 `no-cache`），每次构建都全新执行，保证 wget 下载到最新文件
 - 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
 - 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `template/Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`

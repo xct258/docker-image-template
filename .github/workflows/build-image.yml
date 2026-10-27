@@ -1,6 +1,6 @@
 # ============================================================
 # 构建镜像并推送 Docker Hub
-#   配置来源: app.conf（唯一配置文件）
+#   配置来源: install/app.conf
 #   触发方式: 仅手动（Actions 页面 → Run workflow）
 #   每次推送三个标签: <repo>:<tag>  <repo>:latest  <repo>:sha-<7位提交号>
 #   所需 Secrets: DOCKERACC（账号）/ DOCKERPWD（密码或 Access Token）
@@ -28,34 +28,16 @@ jobs:
       # 构建前校验：必备文件 + 配置文件语法
       # ------------------------------------------------------------
       - name: Validate config files
-        run: |
-          set -euo pipefail
-          # 1) 必备文件（构建时需从仓库下载）
-          for f in app.conf startup/prepare.sh startup/once.sh startup/main.sh \
-                   template/install.sh template/start.sh template/Dockerfile; do
-            [ -f "$f" ] || { echo "错误：仓库缺少 ${f}" >&2; exit 1; }
-          done
-          # 2) 脚本语法
-          bash -n app.conf startup/*.sh template/install.sh template/start.sh
-          # 3) 配置可正常 source（无语法/格式错误），并检查必填项
-          source app.conf
-          [ -n "${IMAGE_REPO:-}" ] || { echo "错误：app.conf 缺少 IMAGE_REPO" >&2; exit 1; }
-          [ -n "${PLATFORMS:-}" ] || { echo "错误：app.conf 缺少 PLATFORMS" >&2; exit 1; }
-          # 4) 启用自定义安装时，脚本必须存在且语法正确
-          if [ "${INSTALL_CUSTOM:-false}" = "true" ]; then
-            [ -f custom-install.sh ] || { echo "错误：INSTALL_CUSTOM=true，但仓库缺少 custom-install.sh" >&2; exit 1; }
-            bash -n custom-install.sh
-          fi
-          echo "app.conf 校验通过"
+        run: bash check.sh
 
       # ------------------------------------------------------------
-      # 读取 app.conf，输出到 GITHUB_OUTPUT 供后续步骤使用
+      # 读取 install/app.conf，输出到 GITHUB_OUTPUT 供后续步骤使用
       # ------------------------------------------------------------
-      - name: Read app.conf
+      - name: Read install/app.conf
         id: conf
         run: |
           set -euo pipefail
-          source app.conf
+          source install/app.conf
           {
             echo "image_repo=${IMAGE_REPO:-xct258/my-image}"
             echo "image_tag=${IMAGE_TAG:-latest}"
