@@ -57,6 +57,18 @@ docker compose up -d
       - ./data:/data
 ```
 
+## 环境变量
+
+在 `docker-compose.yml` 的 `environment:` 下面加键值，容器里直接就能用：
+
+```yaml
+    environment:
+      TZ: Asia/Shanghai
+      PORT: 8080
+```
+
+改完 `docker compose up -d` 生效，不用重建镜像。容器里的脚本/程序按变量名读取，比如 `$PORT`。
+
 ## app.conf 约定
 
 | 配置项 | 作用 |

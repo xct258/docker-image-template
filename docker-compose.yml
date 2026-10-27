@@ -4,6 +4,13 @@ services:
     image: ${IMAGE_REF:-xct258/my-image:latest}
     container_name: ${CONTAINER_NAME:-my-image}
     restart: unless-stopped
-    # 需要端口映射时取消注释
+    # 需要传给容器的变量，在这里加一行即可：KEY: 值
+    environment:
+      TZ: Asia/Shanghai
+      # PORT: 8080
+      # OPENCODE_PASSWORD: 换成你的密码
+    # 需要端口映射 / 挂载时取消注释
     # ports:
     #   - "8080:80"
+    # volumes:
+    #   - ./data:/data
