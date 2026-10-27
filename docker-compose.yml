@@ -16,7 +16,7 @@ services:
       # APP_PASSWORD: 换成你的密码
       # 启动失败后最多重试几次（0 = 不重试，打印原因后停住等排查）
       STARTUP_RETRY: 0
-      # 日志文件目录（log.sh 写入，跟着数据卷走；不设就写进镜像内的 /opt/startup/logs）
+      # 日志文件目录（log.sh 写入，跟着数据卷走；不设时 start.sh 也会默认成 /data/logs）
       LOG_BASE_DIR: /data/logs
       # 每个脚本保留多少个日志文件，默认 30
       # LOG_MAX_FILES: 30
