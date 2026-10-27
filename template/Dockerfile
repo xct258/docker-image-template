@@ -2,7 +2,7 @@
 # 通用镜像模板（固定文件，无需修改）
 #   构建期 -> install/：下载到 /tmp，安装完即删除
 #   运行期 -> startup/：安装到 /opt/startup
-#   入口   -> template/start.sh：安装到 /start.sh
+#   入口   -> template/start.sh：安装到 /opt/start.sh
 #   以上文件构建时从仓库下载（REPO_URL 由 CI 传入）
 # ============================================================
 
@@ -48,8 +48,8 @@ RUN set -eux; \
     chmod +x /tmp/install.sh; \
     /tmp/install.sh; \
     rm -f /tmp/install.sh /tmp/app.conf /tmp/custom-install.sh; \
-    fetch "${REPO_URL}/template/start.sh" /start.sh; \
-    chmod +x /start.sh
+    fetch "${REPO_URL}/template/start.sh" /opt/start.sh; \
+    chmod +x /opt/start.sh
 
 # 工作目录不在这里固定，默认是 /；需要固定时用 compose 的 working_dir 指定
-ENTRYPOINT ["/start.sh"]
+ENTRYPOINT ["/opt/start.sh"]

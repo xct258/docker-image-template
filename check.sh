@@ -123,6 +123,14 @@ else
     bad "install.sh 的 CONF=${conf_path} 在 Dockerfile 里找不到对应下载"
 fi
 
+# 入口：ENTRYPOINT 指向的路径必须是 Dockerfile 里 start.sh 的安装位置
+entry=$(sed -n 's/^ENTRYPOINT \["\(.*\)"\]$/\1/p' template/Dockerfile)
+if [ -n "$entry" ] && grep -qF "template/start.sh\" ${entry}" template/Dockerfile; then
+    ok "ENTRYPOINT ${entry} 与 start.sh 安装路径一致"
+else
+    bad "ENTRYPOINT 指向 ${entry:-未定义}，但 Dockerfile 没有把 start.sh 安装到该路径"
+fi
+
 # ------------------------------------------------------------
 # 5. docker-compose.yml 与 app.conf 的镜像名是否一致
 # ------------------------------------------------------------
