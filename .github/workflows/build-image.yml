@@ -2,7 +2,7 @@
 # 构建镜像并推送 Docker Hub
 #   配置来源: install/app.conf
 #   触发方式: 仅手动（Actions 页面 → Run workflow）
-#   每次推送三个标签: <repo>:<tag>  <repo>:latest  <repo>:sha-<7位提交号>
+#   推送一个标签: <repo>:<IMAGE_TAG>（app.conf 里配置，默认 latest）
 #   所需 Secrets: DOCKERACC（账号）/ DOCKERPWD（密码或 Access Token）
 # ============================================================
 name: Build and Push Docker Image
@@ -71,15 +71,6 @@ jobs:
           username: ${{ secrets.DOCKERACC }}
           password: ${{ secrets.DOCKERPWD }}
 
-      # ------------------------------------------------------------
-      # 由当前提交生成 sha-<7位> 标签
-      # ------------------------------------------------------------
-      - name: Generate sha tag
-        id: tags
-        run: |
-          sha="${{ github.sha }}"
-          echo "sha_tag=${sha:0:7}" >> "$GITHUB_OUTPUT"
-
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
@@ -91,7 +82,4 @@ jobs:
           platforms: ${{ steps.conf.outputs.platforms }}
           build-args: |
             REPO_URL=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
-          tags: |
-            ${{ steps.conf.outputs.image_repo }}:${{ steps.conf.outputs.image_tag }}
-            ${{ steps.conf.outputs.image_repo }}:latest
-            ${{ steps.conf.outputs.image_repo }}:sha-${{ steps.tags.outputs.sha_tag }}
+          tags: ${{ steps.conf.outputs.image_repo }}:${{ steps.conf.outputs.image_tag }}

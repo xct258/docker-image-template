@@ -52,13 +52,13 @@
 |---|---|
 | Actions 页面 → Run workflow | 手动构建（唯一触发方式） |
 
-每次构建推送三个标签：
+每次构建只推送一个标签：
 
 ```
 <IMAGE_REPO>:<IMAGE_TAG>
-<IMAGE_REPO>:latest
-<IMAGE_REPO>:sha-<7位提交号>
 ```
+
+`IMAGE_TAG` 在 `install/app.conf` 里改（默认 `latest`）。
 
 构建失败或日志都在仓库的 Actions 页面查看。
 
