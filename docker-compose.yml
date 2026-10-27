@@ -1,15 +1,18 @@
 services:
   app:
-    # 镜像名默认与 app.conf 一致，可在这里改，或用环境变量覆盖
-    image: ${IMAGE_REF:-xct258/my-image:latest}
-    container_name: ${CONTAINER_NAME:-my-image}
+    # 部署前把这两行改成 app.conf 里的镜像名和想用的容器名
+    image: xct258/my-image:latest
+    container_name: my-image
+    # 默认 host 网络：直接用宿主机端口，不需要 ports 映射
+    # 想用桥接网络就注释掉这行，再打开下面的 ports
+    network_mode: host
     restart: unless-stopped
     # 需要传给容器的变量，在这里加一行即可：KEY: 值
     environment:
       TZ: Asia/Shanghai
       # PORT: 8080
       # OPENCODE_PASSWORD: 换成你的密码
-    # 需要端口映射 / 挂载时取消注释
+    # host 网络下 ports 不生效
     # ports:
     #   - "8080:80"
     # volumes:

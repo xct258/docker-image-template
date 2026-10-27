@@ -110,39 +110,24 @@ fi
 # ------------------------------------------------------------
 # 5. docker-compose.yml 与 app.conf 的镜像名是否一致
 # ------------------------------------------------------------
-section "docker-compose.yml 镜像名"
-compose_img=$(sed -n 's/^[[:space:]]*image:[[:space:]]*//p' docker-compose.yml | head -1 | tr -d '"'"'")
+section "docker-compose.yml"
+compose_img=$(sed -n 's/^[[:space:]]*image:[[:space:]]*//p' docker-compose.yml | head -1)
+compose_img="${compose_img//\"/}"
+compose_img="${compose_img//\'/}"
 expected_img="${IMAGE_REPO:-}:${IMAGE_TAG:-}"
-if [ -z "$compose_img" ]; then
-    bad "docker-compose.yml 里没有 image:"
-elif [[ $compose_img =~ ^\$\{[A-Za-z_][A-Za-z0-9_]*:-(.*)\}$ ]]; then
-    # 形如 ${IMAGE_REF:-xct258/my-image:latest}，比对默认值
-    if [ "${BASH_REMATCH[1]}" = "$expected_img" ]; then
-        ok "默认镜像与 app.conf 一致：$expected_img"
-    else
-        bad "compose 默认镜像 ${BASH_REMATCH[1]} ≠ app.conf 的 ${expected_img}"
-    fi
-elif [[ $compose_img == *'${'* ]]; then
-    warn "compose 镜像使用了无默认值的变量，无法比对：$compose_img"
-elif [ "$compose_img" = "$expected_img" ]; then
-    ok "镜像名与 app.conf 一致：$expected_img"
+if [ "$compose_img" = "$expected_img" ]; then
+    ok "镜像名与 app.conf 一致：${expected_img}"
 else
     bad "compose 镜像 ${compose_img} ≠ app.conf 的 ${expected_img}"
 fi
 
-# container_name 不校验，只在仍是模板默认值时提醒一下
-compose_name=$(sed -n 's/^[[:space:]]*container_name:[[:space:]]*//p' docker-compose.yml | head -1 | tr -d '"'"'")
-case "$compose_name" in
-    *'${'*'}'*)
-        name_default="${compose_name#*:-}"
-        name_default="${name_default%\}}"
-        ;;
-    *) name_default="$compose_name" ;;
-esac
-if [ "$name_default" = "my-image" ] || [ -z "$name_default" ]; then
-    warn "container_name 仍是默认值 my-image，部署前记得改成唯一名称（不做强制校验）"
+compose_name=$(sed -n 's/^[[:space:]]*container_name:[[:space:]]*//p' docker-compose.yml | head -1)
+compose_name="${compose_name//\"/}"
+compose_name="${compose_name//\'/}"
+if [ "$compose_name" = "my-image" ]; then
+    warn "container_name 还是模板默认值 my-image，部署前记得改（不强制校验）"
 else
-    ok "container_name=${name_default}（不校验唯一性）"
+    ok "container_name=${compose_name}（不校验唯一性）"
 fi
 
 # ------------------------------------------------------------

@@ -18,7 +18,7 @@
 │   ├── Dockerfile
 │   └── start.sh          # 依次调用 startup/ 下的三个脚本
 ├── check.sh              # 本地自查（push 前跑，CI 也用）
-├── docker-compose.yml    # 部署示例
+├── docker-compose.yml    # 部署配置（默认 host 网络）
 └── .github/workflows/build-image.yml
 ```
 
@@ -44,7 +44,7 @@
 2. 仓库 Settings → Secrets and variables → Actions，添加：
    - `DOCKERACC`：Docker Hub 账号
    - `DOCKERPWD`：Docker Hub 密码或 Access Token
-3. `docker-compose.yml` 里的默认镜像名同步改成一样（或部署时用 `IMAGE_REF` 覆盖）；`container_name` 也建议改成唯一名称，`check.sh` 只在它还是 `my-image` 时提醒，不做强制校验
+3. 部署前把 `docker-compose.yml` 的 `image` / `container_name` 改成自己的名字；镜像名和 `app.conf` 不一致时 `check.sh` 会报错
 
 ## 构建
 
@@ -76,7 +76,7 @@ CI 的 Validate 步骤调用的是同一个脚本，本地过了线上基本不�
 - `install/`、`startup/`、`template/` 下脚本的语法
 - `install/app.conf` 必填项（`IMAGE_REPO` / `PLATFORMS`）与开关取值（`true` / `false`）
 - Dockerfile 里 `wget` 的下载路径在仓库中是否真的存在、`startup/` 脚本列表是否一致
-- `docker-compose.yml` 的默认镜像名是否与 `install/app.conf` 的 `IMAGE_REPO:IMAGE_TAG` 一致（`container_name` 只提醒不校验）
+- `docker-compose.yml` 的镜像名是否与 `install/app.conf` 的 `IMAGE_REPO:IMAGE_TAG` 一致（`container_name` 只提醒不校验）
 - `docker-compose.yml` 与 workflow 的 YAML 解析
 - 装了 `shellcheck` / `hadolint` 时顺带检查（只提示，不影响结果）
 
@@ -86,9 +86,17 @@ CI 的 Validate 步骤调用的是同一个脚本，本地过了线上基本不�
 docker compose up -d
 ```
 
-端口、挂载在 `docker-compose.yml` 里按需取消注释：
+部署前把 `docker-compose.yml` 里的两行改成自己的名字（和 `install/app.conf` 对应）：
 
 ```yaml
+    image: xct258/my-image:latest
+    container_name: my-image
+```
+
+默认使用 **host 网络**（`network_mode: host`），容器直接用宿主机端口，`ports:` 映射不生效。需要独立网络时注释掉 `network_mode`，再打开 `ports`：
+
+```yaml
+    # network_mode: host
     ports:
       - "8080:80"
     volumes:
