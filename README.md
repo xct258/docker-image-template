@@ -68,6 +68,7 @@ docker compose up -d
 - 构建流水线在 `.github/workflows/build-image.yml`，读取 `image.conf` 的配置，通常无需修改
 - 构建前会自动校验：必备文件齐全、`app.conf` / `image.conf` 语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
 - 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `app.conf` / `install.sh` / `start.sh`
+- 构建**完全不使用缓存**（CI 构建设 `no-cache`），每次构建都全新执行，保证 wget 下载到最新文件
 - 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
 - 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`
 - Actions 构建多架构时会自动安装 QEMU，无需本地处理

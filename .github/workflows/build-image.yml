@@ -99,6 +99,8 @@ jobs:
         with:
           context: .
           push: true
+          # 不使用任何构建缓存，每次构建全新执行，保证下载最新文件
+          no-cache: true
           platforms: ${{ steps.conf.outputs.platforms }}
           build-args: |
             REPO_URL=https://raw.githubusercontent.com/${{ github.repository }}/${{ github.ref_name }}
@@ -106,6 +108,3 @@ jobs:
             ${{ steps.conf.outputs.image_repo }}:${{ steps.conf.outputs.image_tag }}
             ${{ steps.conf.outputs.image_repo }}:latest
             ${{ steps.conf.outputs.image_repo }}:sha-${{ steps.tags.outputs.sha_tag }}
-          # 启用 GitHub Actions 缓存，加速重复构建
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
