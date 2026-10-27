@@ -1,3 +1,0 @@
-# 系统依赖：一行一个 apt 包名，# 开头为注释
-ca-certificates
-curl

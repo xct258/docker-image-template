@@ -1,15 +1,14 @@
 # Docker 镜像模板
 
-只通过 GitHub Actions 构建：**改文件 → push → Actions 自动构建多架构镜像并推送 Docker Hub**，本地不需要安装 Docker。
+只通过 GitHub Actions 构建：**改文件 → push → 在 Actions 页面手动触发构建多架构镜像并推送 Docker Hub**，本地不需要安装 Docker。
 
 ## 需要改的文件
 
 | 文件 | 作用 |
 |---|---|
-| `packages.txt` | 系统依赖列表（apt 包名，一行一个） |
-| `install.sh` | 自定义依赖安装（下载二进制、编译等，可选） |
+| `install.sh` | 依赖安装（apt 系统依赖 + 自定义依赖），构建时执行一次 |
 | `start.sh` | 容器启动时执行的命令 |
-| `image.conf` | 镜像名、基础镜像、构建架构 |
+| `image.conf` | 镜像名、构建架构 |
 
 ## 一次性准备
 
@@ -23,9 +22,7 @@
 
 | 触发方式 | 说明 |
 |---|---|
-| push 到 `main` | 自动构建并推送 |
-| Actions 页面 → Run workflow | 手动构建 |
-| 每月 1 日 | 定时重建，跟进基础镜像更新 |
+| Actions 页面 → Run workflow | 手动构建（唯一触发方式） |
 
 每次构建推送三个标签：
 
@@ -60,11 +57,15 @@ docker compose up -d
 
 ## install.sh 约定
 
-- 构建镜像时执行一次，适合 apt 装不了的东西
+- 构建镜像时执行一次，负责所有依赖：系统依赖（apt 包）+ 自定义依赖（二进制、编译等）
+- apt 包名直接写在脚本里，装完记得清理 `apt` 缓存
 - 可用 `TARGETARCH` 区分 `amd64` / `arm64`
 - 记得清理临时文件，减小镜像体积
 
 ## 说明
 
-- 基础镜像默认 `xct258/debian-cn`（Debian 系），换镜像时确保有 `apt-get`
+- 构建流水线在 `.github/workflows/build-image.yml`，读取 `image.conf` 的配置，通常无需修改
+- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `install.sh` / `start.sh`
+- 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
+- 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`
 - Actions 构建多架构时会自动安装 QEMU，无需本地处理
