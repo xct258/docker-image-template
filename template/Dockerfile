@@ -20,26 +20,34 @@ ARG TARGETARCH
 # 下载配置与启动脚本 + 依赖安装（合并为一个 RUN，减少镜像层数）
 #   构建不启用缓存（CI 的 no-cache），因此每次都重新下载最新文件
 # ------------------------------------------------------------
+# 注意：wget 的 CA 证书属于 Recommended，--no-install-recommends 不会带上，
+# 缺了会让 https 下载报证书错误（wget exit 5），所以这里固定一起装
 RUN set -eux; \
     mkdir -p /app; \
-    if ! command -v wget >/dev/null 2>&1; then \
+    if ! command -v wget >/dev/null 2>&1 || [ ! -e /etc/ssl/certs/ca-certificates.crt ]; then \
         apt-get update; \
-        apt-get install -y --no-install-recommends wget; \
+        apt-get install -y --no-install-recommends wget ca-certificates; \
         rm -rf /var/lib/apt/lists/*; \
     fi; \
-    wget -qO /app/app.conf "${REPO_URL}/install/app.conf"; \
-    if ! wget -qO /app/custom-install.sh "${REPO_URL}/install/custom-install.sh"; then \
+    fetch() { \
+        wget -nv --tries=3 --waitretry=5 --timeout=30 -O "$2" "$1" || { \
+            echo "[fetch] 下载失败（exit $?）：$1" >&2; \
+            exit 1; \
+        }; \
+    }; \
+    fetch "${REPO_URL}/install/app.conf" /app/app.conf; \
+    if ! wget -q --tries=3 --timeout=30 -O /app/custom-install.sh "${REPO_URL}/install/custom-install.sh"; then \
         rm -f /app/custom-install.sh; \
     fi; \
     mkdir -p /app/startup; \
     for f in prepare.sh once.sh main.sh; do \
-        wget -qO "/app/startup/${f}" "${REPO_URL}/startup/${f}"; \
+        fetch "${REPO_URL}/startup/${f}" "/app/startup/${f}"; \
     done; \
-    wget -qO /tmp/install.sh "${REPO_URL}/install/install.sh"; \
+    fetch "${REPO_URL}/install/install.sh" /tmp/install.sh; \
     chmod +x /tmp/install.sh; \
     /tmp/install.sh; \
     rm -f /tmp/install.sh; \
-    wget -qO /start.sh "${REPO_URL}/template/start.sh"; \
+    fetch "${REPO_URL}/template/start.sh" /start.sh; \
     chmod +x /start.sh
 
 WORKDIR /app

@@ -150,4 +150,6 @@ exec opencode serve --port "${PORT:-8080}"
 - 构建**完全不使用缓存**（CI 构建设 `no-cache`），每次构建都全新执行，保证 wget 下载到最新文件
 - 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
 - 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `template/Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`
+- 构建时 `wget` 报证书/SSL 错误（exit 5）：基础镜像缺 `ca-certificates`，Dockerfile 已固定一起安装；换了自定义基础镜像仍报错时，检查该镜像的 `/etc/ssl/certs/ca-certificates.crt`
+- 下载失败会打印 `[fetch] 下载失败（exit N）：URL`，`exit 8` 是 404（路径或仓库名不对），`exit 5` 是证书问题，`exit 4` 是网络不通
 - Actions 构建多架构时会自动安装 QEMU，无需本地处理
