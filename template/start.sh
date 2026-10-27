@@ -10,8 +10,11 @@ set -euo pipefail
 
 DIR=/opt/startup
 ONCE_MARK=/data/.startup-once.done
+# 启动失败时写这个标记，compose 的 healthcheck 会据此把容器标成 unhealthy
+FAIL_MARK=/data/.startup-failed
 
 mkdir -p /data
+rm -f "$FAIL_MARK"
 
 # ------------------------------------------------------------
 # 0. 补全 PATH
@@ -56,6 +59,8 @@ fail_start() {
         exit "$code"
     fi
     echo "[start] 不再重试（STARTUP_RETRY=${STARTUP_RETRY}）；修复后执行 docker compose restart" >&2
+    # 容器会保持 Up，靠这个标记让 healthcheck 报 unhealthy
+    touch "$FAIL_MARK"
     exec sleep infinity
 }
 
@@ -85,8 +90,8 @@ fi
 
 # ------------------------------------------------------------
 # 3. 主进程：必须前台运行，docker stop 才能优雅退出
-#    走到这里说明启动成功，清掉失败计数
+#    走到这里说明启动成功，清掉失败计数和失败标记
 # ------------------------------------------------------------
-rm -f "$ATTEMPT_FILE"
+rm -f "$ATTEMPT_FILE" "$FAIL_MARK"
 echo "[start] main"
 exec bash "${DIR}/main.sh"
