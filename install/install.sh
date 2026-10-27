@@ -1,12 +1,13 @@
 #!/bin/bash
 # ============================================================
 # 依赖安装（构建时执行一次）
-#   读取 /app/app.conf：APT_PACKAGES / INSTALL_7Z / PYTHON_PACKAGES / INSTALL_CUSTOM
-#   自定义安装脚本 /app/custom-install.sh（仓库里同在 install/ 目录）
+#   读取 /tmp/app.conf：APT_PACKAGES / INSTALL_7Z / PYTHON_PACKAGES / INSTALL_CUSTOM
+#   自定义安装脚本 /tmp/custom-install.sh（仓库里同在 install/ 目录）
+#   这两个文件只在构建期存在，安装完由 Dockerfile 删除
 # ============================================================
 set -euo pipefail
 
-CONF=/app/app.conf
+CONF=/tmp/app.conf
 if [ ! -f "$CONF" ]; then
     echo "[install] 错误：未找到 ${CONF}" >&2
     exit 1
@@ -107,10 +108,10 @@ fi
 
 # ------------------------------------------------------------
 # 4. 自定义安装脚本（apt / pip 之外的操作）
-#    app.conf 的 INSTALL_CUSTOM=true 时执行 /app/custom-install.sh
+#    app.conf 的 INSTALL_CUSTOM=true 时执行 /tmp/custom-install.sh
 # ------------------------------------------------------------
 if [ "${INSTALL_CUSTOM:-false}" = "true" ]; then
-    script=/app/custom-install.sh
+    script=/tmp/custom-install.sh
     if [ ! -f "$script" ]; then
         echo "[install] 错误：INSTALL_CUSTOM=true，但未找到 ${script}" >&2
         exit 1

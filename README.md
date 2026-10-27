@@ -108,7 +108,7 @@ docker compose up -d
 镜像里不固定 `WORKDIR`，容器主进程的默认工作目录是 `/`。需要固定时在 compose 里取消注释：
 
 ```yaml
-    # working_dir: /app
+    # working_dir: /workspace
 ```
 
 `working_dir` 同时决定 `docker exec` 进去的落点和主进程继承的 cwd。挂载代码目录时配套使用：
@@ -118,6 +118,17 @@ docker compose up -d
     volumes:
       - ./workspace:/workspace
 ```
+
+镜像里的脚本不占用 `/app`、`/workspace` 这类业务目录：
+
+| 路径 | 内容 | 生命周期 |
+|---|---|---|
+| `/start.sh` | 启动入口 | 常驻 |
+| `/opt/startup/*.sh` | `prepare.sh` / `once.sh` / `main.sh` | 常驻 |
+| `/tmp/app.conf`、`/tmp/custom-install.sh`、`/tmp/install.sh` | 构建期配置与安装脚本 | 安装完即删 |
+| `/data` | 数据卷挂载点 | 随卷保留 |
+
+所以 `working_dir` 可以放心指向 `/workspace`、`/app` 等任意目录，不会被镜像自带文件占用。
 
 ## 环境变量
 
@@ -163,7 +174,7 @@ exec opencode serve --port "${PORT:-8080}"
 
 - 构建流水线在 `.github/workflows/build-image.yml`，读取 `install/app.conf` 的配置，通常无需修改
 - 构建前会自动校验：必备文件齐全、`install/` 与 `startup/` 下的脚本语法正确、`DOCKERACC` / `DOCKERPWD` secrets 已配置，校验失败会给出明确错误
-- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `install/app.conf` / `install/custom-install.sh` / `install/install.sh` / `startup/*.sh` / `template/start.sh`（`custom-install.sh` 缺失时自动跳过）
+- 构建时不用 `COPY`，而是由 CI 生成 `REPO_URL`（当前仓库的 raw 地址），Dockerfile 用 `wget` 下载 `install/app.conf` / `install/custom-install.sh` / `install/install.sh` 到 `/tmp`（安装完删除）、`startup/*.sh` 到 `/opt/startup`、`template/start.sh` 到 `/start.sh`（`custom-install.sh` 缺失时自动跳过）
 - 构建**完全不使用缓存**（CI 构建设 `no-cache`），每次构建都全新执行，保证 wget 下载到最新文件
 - 因此**仓库需要是公开的**（private 仓库的 raw 地址需要鉴权，wget 无法直接访问）
 - 基础镜像固定为 `xct258/debian-cn`（Debian 系）；要换基础镜像需改 `template/Dockerfile` 的 `FROM`，且新镜像要带 `apt-get`

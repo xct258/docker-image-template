@@ -9,7 +9,7 @@ set -euo pipefail
 # 示例：首次启动时生成配置
 # mkdir -p /data/app
 # if [ ! -f /data/app/config.yml ]; then
-#     cp /app/config.example.yml /data/app/config.yml
+#     cp /workspace/config.example.yml /data/app/config.yml
 # fi
 
 echo "[once] 完成"

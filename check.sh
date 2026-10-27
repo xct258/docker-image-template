@@ -107,6 +107,22 @@ else
     echo "         仓库目录  : $(echo "$repo_names" | tr '\n' ' ')" >&2
 fi
 
+# 运行期脚本目录：start.sh 的 DIR 必须与 Dockerfile 的安装路径一致
+start_dir=$(sed -n 's/^DIR=//p' template/start.sh)
+if [ -n "$start_dir" ] && grep -q "\"${start_dir}/" template/Dockerfile; then
+    ok "start.sh DIR=${start_dir} 与 Dockerfile 安装路径一致"
+else
+    bad "start.sh 的 DIR=${start_dir} 在 Dockerfile 里找不到对应安装路径"
+fi
+
+# 构建期配置：install.sh 读的 app.conf 必须是 Dockerfile 下载到的位置
+conf_path=$(sed -n 's/^CONF=//p' install/install.sh)
+if [ -n "$conf_path" ] && grep -q -- "$conf_path" template/Dockerfile; then
+    ok "install.sh CONF=${conf_path} 在 Dockerfile 中有对应下载"
+else
+    bad "install.sh 的 CONF=${conf_path} 在 Dockerfile 里找不到对应下载"
+fi
+
 # ------------------------------------------------------------
 # 5. docker-compose.yml 与 app.conf 的镜像名是否一致
 # ------------------------------------------------------------

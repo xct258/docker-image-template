@@ -4,11 +4,11 @@
 #   1. startup/prepare.sh  每次启动容器都执行（重启也执行）
 #   2. startup/once.sh     只执行一次（标记文件 /data/.startup-once.done）
 #   3. startup/main.sh     容器主进程（exec 前台运行）
-#   三个脚本在仓库 startup/ 目录，构建时下载到 /app/startup
+#   三个脚本在仓库 startup/ 目录，构建时下载到 /opt/startup
 # ============================================================
 set -euo pipefail
 
-DIR=/app/startup
+DIR=/opt/startup
 ONCE_MARK=/data/.startup-once.done
 
 mkdir -p /data

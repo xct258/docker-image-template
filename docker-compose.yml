@@ -7,8 +7,8 @@ services:
     # 想用桥接网络就注释掉这行，再打开下面的 ports
     network_mode: host
     restart: unless-stopped
-    # 工作目录默认是 /；需要固定就取消注释（如 /app，或挂载代码后用 /workspace）
-    # working_dir: /app
+    # 工作目录默认是 /；需要固定就取消注释（挂载代码后用 /workspace 之类）
+    # working_dir: /workspace
     # 需要传给容器的变量，在这里加一行即可：KEY: 值
     environment:
       TZ: Asia/Shanghai

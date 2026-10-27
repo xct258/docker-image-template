@@ -1,8 +1,8 @@
 # ============================================================
 # 通用镜像模板（固定文件，无需修改）
-#   构建期 -> install/：app.conf / install.sh / custom-install.sh
-#   运行期 -> startup/：prepare.sh / once.sh / main.sh
-#   入口   -> template/start.sh
+#   构建期 -> install/：下载到 /tmp，安装完即删除
+#   运行期 -> startup/：安装到 /opt/startup
+#   入口   -> template/start.sh：安装到 /start.sh
 #   以上文件构建时从仓库下载（REPO_URL 由 CI 传入）
 # ============================================================
 
@@ -22,8 +22,9 @@ ARG TARGETARCH
 # ------------------------------------------------------------
 # 注意：wget 的 CA 证书属于 Recommended，--no-install-recommends 不会带上，
 # 缺了会让 https 下载报证书错误（wget exit 5），所以这里固定一起装
+# 路径约定：构建期配置放 /tmp（安装完删除），运行期脚本放 /opt/startup，
+# 镜像里不占用 /app 等业务目录
 RUN set -eux; \
-    mkdir -p /app; \
     if ! command -v wget >/dev/null 2>&1 || [ ! -e /etc/ssl/certs/ca-certificates.crt ]; then \
         apt-get update; \
         apt-get install -y --no-install-recommends wget ca-certificates; \
@@ -35,18 +36,18 @@ RUN set -eux; \
             exit 1; \
         }; \
     }; \
-    fetch "${REPO_URL}/install/app.conf" /app/app.conf; \
-    if ! wget -q --tries=3 --timeout=30 -O /app/custom-install.sh "${REPO_URL}/install/custom-install.sh"; then \
-        rm -f /app/custom-install.sh; \
+    fetch "${REPO_URL}/install/app.conf" /tmp/app.conf; \
+    if ! wget -q --tries=3 --timeout=30 -O /tmp/custom-install.sh "${REPO_URL}/install/custom-install.sh"; then \
+        rm -f /tmp/custom-install.sh; \
     fi; \
-    mkdir -p /app/startup; \
+    mkdir -p /opt/startup; \
     for f in prepare.sh once.sh main.sh; do \
-        fetch "${REPO_URL}/startup/${f}" "/app/startup/${f}"; \
+        fetch "${REPO_URL}/startup/${f}" "/opt/startup/${f}"; \
     done; \
     fetch "${REPO_URL}/install/install.sh" /tmp/install.sh; \
     chmod +x /tmp/install.sh; \
     /tmp/install.sh; \
-    rm -f /tmp/install.sh; \
+    rm -f /tmp/install.sh /tmp/app.conf /tmp/custom-install.sh; \
     fetch "${REPO_URL}/template/start.sh" /start.sh; \
     chmod +x /start.sh
 
