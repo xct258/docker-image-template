@@ -11,17 +11,28 @@ services:
     # working_dir: /workspace
     # 需要传给容器的变量，在这里加一行即可：KEY: 值
     environment:
-      TZ: Asia/Shanghai
       # PORT: 8080
       # APP_PASSWORD: 换成你的密码
-      # 启动失败后最多重试几次（0 = 不重试，打印原因后停住等排查）
-      STARTUP_RETRY: 0
-      # 每次重试前等几秒再退出，默认 5
-      # STARTUP_RETRY_DELAY: 5
+      # 启动时检查服务更新：有 update.sh 时默认开启，0 关闭
+      # UPDATE_ON_START: 1
+      # 运行期定时检查间隔（天），0 = 只查启动那一次
+      # UPDATE_INTERVAL_DAYS: 1
+      # 单次检查最长秒数（默认 60）
+      # UPDATE_TIMEOUT: 60
+      # 1 = 启动时更新失败按启动失败处理（默认 0：只告警，旧版本继续启动）
+      # UPDATE_STRICT: 0
+      # 装到新版本后立即重启服务（只重启 main.sh，容器不退出），
+      # 0 = 只装不重启（默认 1）
+      # UPDATE_RESTART: 1
       # 额外加入 PATH 的目录，冒号分隔（默认已补 ~/.local/bin 等常见目录）
       # EXTRA_PATH_DIRS: /opt/tools/bin:/workspace/bin
       # 日志文件目录（log.sh 写入；挂载了 /data 才跟着数据卷保留，不设时 start.sh 也默认用 /data/logs）
       LOG_BASE_DIR: /data/logs
+      # 服务日志（默认 /data/logs/service/service.log）
+      # SERVICE_LOG_KEEP_DAYS: 15
+      # 启动摘要里显示的端口/密码（可选）
+      # SERVICE_PORT: 8080
+      # SERVICE_PASSWORD: 换成你的密码
       # 每个脚本保留多少个日志文件，默认 30
       # LOG_MAX_FILES: 30
     # host 网络下 ports 不生效

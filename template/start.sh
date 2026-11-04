@@ -1,27 +1,26 @@
 #!/bin/bash
 # ============================================================
-# 容器启动入口（固定模板，无需修改）
-#   1. startup/prepare.sh  每次启动容器都执行（重启也执行）
-#   2. startup/once.sh     只执行一次（标记文件 /data/.startup-once.done）
-#   3. startup/main.sh     容器主进程（exec 前台运行）
-#   三个脚本在仓库 startup/ 目录，构建时下载到 /opt/startup
+# 容器启动入口
+#   1. startup/prepare.sh / update.sh / once.sh 依次执行
+#   2. 启动后台定时更新（UPDATE_INTERVAL_DAYS > 0 时）
+#   3. exec main.sh：服务管理脚本，负责启动服务并常驻
+# main.sh 是容器主进程，
+# 更新装好后给它发 USR1，它自己停掉服务再启动。
 # ============================================================
 set -euo pipefail
 
 DIR=/opt/startup
 ONCE_MARK=/data/.startup-once.done
+# exec main.sh 之后 PID 不变，后台循环用它给服务管理脚本发信号
+MAIN_PID=$$
+export MAIN_PID
 
 mkdir -p /data
 
 # ------------------------------------------------------------
-# 日志模块：构建时从 common 仓库下载到 /opt/startup/log.sh
-#   log <级别> <消息>     只写文件（${LOG_BASE_DIR}/<脚本名>/年/月/日/）
-#   log -f <级别> <消息>  同时打印到控制台，即出现在 docker logs 里
-# 这里的取舍：正常步骤（prepare / once）只进文件，
-#   启动成功留一行 main，失败和重试全部进控制台
-#   级别：debug / success / info / warn / error / fatal
-#   文件落在 ${LOG_BASE_DIR}/<脚本名>/年/月/日/，默认保留 30 个
-#   来源见 install/app.conf 的 LOG_LIB_URL
+# 日志模块（构建时从 common 仓库下载到 /opt/startup/log.sh）
+#   log <级别> <消息>     只写文件
+#   log -f <级别> <消息>  同时打印到控制台（docker logs）
 # ------------------------------------------------------------
 LOG_BASE_DIR=${LOG_BASE_DIR:-/data/logs}
 export LOG_BASE_DIR
@@ -32,13 +31,8 @@ fi
 . "${DIR}/log.sh"
 
 # ------------------------------------------------------------
-# 0. 补全 PATH
-#    安装器（opencode / bun / uv 等）把可执行文件放在 $HOME 下的 bin 目录，
-#    只把该目录写进 ~/.bashrc / ~/.profile；容器启动用的是非交互 shell，
-#    不会加载这些文件，直接用命令会「未找到」。这里只补常见目录：
-#    不做全盘 find，避免 node_modules/.bin 之类拖慢启动、遮蔽系统命令。
-#    其它目录用 EXTRA_PATH_DIRS 追加，冒号分隔，
-#    如 EXTRA_PATH_DIRS=/opt/tools/bin:/workspace/bin
+# 补全 PATH：安装器把可执行文件放在 $HOME 下的 bin 目录，
+# 只写进 ~/.bashrc，容器里的非交互 shell 不会加载。
 # ------------------------------------------------------------
 path_dirs=(
     "${HOME:-/root}/.local/bin"
@@ -61,14 +55,7 @@ done
 export PATH
 
 # ------------------------------------------------------------
-# 0.1 启动失败处理
-#   启动阶段的错误（端口占用、配置写错、依赖没装）重试不会自己好。
-#   「重试」是 Docker 的 restart 策略在拉起容器，不是脚本自己循环，
-#   所以脚本只负责判断：还要不要继续让它拉起。
-#   STARTUP_RETRY 指定最多重试几次（默认 0 = 不重试）：
-#     未超限 -> 等待 STARTUP_RETRY_DELAY 秒后退出，让 restart 策略重新拉起
-#     已超限 -> 打印原因后停住，不再重启，避免刷屏
-#   计数存在 /data/.startup-attempts，启动成功后自动清除
+# 启动失败与重试
 # ------------------------------------------------------------
 STARTUP_RETRY=${STARTUP_RETRY:-0}
 case "$STARTUP_RETRY" in '' | *[!0-9]*) STARTUP_RETRY=0 ;; esac
@@ -88,7 +75,6 @@ fail_start() {
     log -f error "${name} 失败（exit ${code}）"
     if [ "$used" -le "$STARTUP_RETRY" ]; then
         log -f warn "第 ${used}/${STARTUP_RETRY} 次重试：${STARTUP_RETRY_DELAY}s 后退出，等待 restart 策略重新拉起"
-        # 不在脚本里循环：退出后由 Docker 拉起。先等一会儿，避免立即重启刷屏
         sleep "$STARTUP_RETRY_DELAY"
         exit "$code"
     fi
@@ -103,14 +89,140 @@ run_step() {
 }
 
 # ------------------------------------------------------------
+# 自动更新参数
+#   UPDATE_ON_START       启动时是否检查，默认 1
+#   UPDATE_INTERVAL_DAYS  运行期每隔多少天检查一次，0 = 关闭（默认）
+#   UPDATE_TIMEOUT        单次检查最长秒数，默认 60
+#   UPDATE_STRICT         启动时检查失败是否阻塞启动，默认 0
+#   UPDATE_RESTART        装到新版本后是否重启服务，默认 1
+#   UPDATE_CHECK_AT       运行期检查时间 HH:MM，默认 04:00（容器本地时间）
+# ------------------------------------------------------------
+UPDATE_ON_START=${UPDATE_ON_START:-1}
+case "$UPDATE_ON_START" in '' | 0 | false | no | off) UPDATE_ON_START=0 ;; *) UPDATE_ON_START=1 ;; esac
+UPDATE_INTERVAL_DAYS=${UPDATE_INTERVAL_DAYS:-0}
+case "$UPDATE_INTERVAL_DAYS" in '' | *[!0-9]*) UPDATE_INTERVAL_DAYS=0 ;; esac
+UPDATE_TIMEOUT=${UPDATE_TIMEOUT:-60}
+case "$UPDATE_TIMEOUT" in '' | *[!0-9]*) UPDATE_TIMEOUT=60 ;; esac
+UPDATE_STRICT=${UPDATE_STRICT:-0}
+UPDATE_RESTART=${UPDATE_RESTART:-1}
+case "$UPDATE_RESTART" in 0 | false | no | off) UPDATE_RESTART=0 ;; *) UPDATE_RESTART=1 ;; esac
+UPDATE_CHECK_AT=${UPDATE_CHECK_AT:-04:00}
+if ! date -d "today ${UPDATE_CHECK_AT}" +%s >/dev/null 2>&1; then
+    log -f warn "UPDATE_CHECK_AT=${UPDATE_CHECK_AT} 不是有效的 HH:MM，改用 04:00"
+    UPDATE_CHECK_AT=04:00
+fi
+
+# ------------------------------------------------------------
+# 检查更新
+#   update.sh 退出码：0 = 无变化，10 = 已装新版本，其它 = 失败
+# ------------------------------------------------------------
+check_update_once() {
+    local code=0
+    [ -f "${DIR}/update.sh" ] || return 0
+
+    if [ "$UPDATE_TIMEOUT" -eq 0 ]; then
+        log info "检查更新（不限时）"
+    else
+        log info "检查更新（最长 ${UPDATE_TIMEOUT}s）"
+    fi
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "$UPDATE_TIMEOUT" bash "${DIR}/update.sh" || code=$?
+    else
+        bash "${DIR}/update.sh" || code=$?
+    fi
+    return "$code"
+}
+
+# 启动时检查：失败默认不阻塞启动
+run_update() {
+    local code=0
+
+    if [ "$UPDATE_ON_START" -eq 0 ]; then
+        log info "UPDATE_ON_START=0，跳过启动时检查"
+        return 0
+    fi
+    if [ ! -f "${DIR}/update.sh" ]; then
+        log info "没有 update.sh，跳过自动更新"
+        return 0
+    fi
+
+    check_update_once || code=$?
+
+    # 10 = 已更新，此时 main.sh 还没启动，新版本直接生效
+    if [ "$code" -eq 0 ] || [ "$code" -eq 10 ]; then
+        log success "更新检查完成"
+        return 0
+    fi
+    if [ "$UPDATE_STRICT" = "1" ]; then
+        fail_start update "$code"
+        return 0
+    fi
+    if [ "$code" -eq 124 ]; then
+        log -f warn "更新检查超时（${UPDATE_TIMEOUT}s），继续用当前版本启动"
+    else
+        log -f warn "更新检查失败（exit ${code}），继续用当前版本启动"
+    fi
+    return 0
+}
+
+# 睡到下一个 HH:MM
+sleep_until_next_check() {
+    local now target
+    now=$(date +%s)
+    target=$(date -d "today ${UPDATE_CHECK_AT}" +%s 2>/dev/null || echo 0)
+    if [ "$target" -le 0 ]; then
+        sleep 86400
+        return 0
+    fi
+    if [ "$target" -le "$now" ]; then
+        target=$(date -d "tomorrow ${UPDATE_CHECK_AT}" +%s 2>/dev/null || echo 0)
+    fi
+    if [ "$target" -gt "$now" ]; then
+        sleep "$((target - now))"
+    fi
+    return 0
+}
+
+# 每 UPDATE_INTERVAL_DAYS 天在 UPDATE_CHECK_AT 检查一次；有更新立即重启
+update_loop() {
+    local code=0
+    while :; do
+        sleep_until_next_check
+
+        code=0
+        check_update_once || code=$?
+        if [ "$code" -eq 10 ]; then
+            if [ "$UPDATE_RESTART" = "1" ]; then
+                log -f success "已更新，重启服务应用新版本"
+                kill -USR1 "$MAIN_PID" 2>/dev/null || true
+            else
+                log -f success "已更新；当前进程仍是旧版本，下次重启容器后生效"
+            fi
+        elif [ "$code" -ne 0 ]; then
+            log -f warn "定时更新检查失败（exit ${code}），继续使用当前版本"
+        fi
+
+        # 检查间隔 > 1 天时，先跳过中间的整天，下一轮再睡到 HH:MM
+        if [ "$UPDATE_INTERVAL_DAYS" -gt 1 ]; then
+            sleep "$(( (UPDATE_INTERVAL_DAYS - 1) * 86400 ))"
+        fi
+    done
+}
+
+# ------------------------------------------------------------
 # 1. 启动前的准备：每次启动都执行
 # ------------------------------------------------------------
 log info "prepare"
 run_step prepare "${DIR}/prepare.sh"
 
 # ------------------------------------------------------------
-# 2. 只执行一次：初始化数据等，成功后写标记，之后不再执行
-#    要重新执行就删掉标记文件；标记在 /data 里，随数据卷保留
+# 2. 启动时检查更新（可选）
+# ------------------------------------------------------------
+log info "update"
+run_update
+
+# ------------------------------------------------------------
+# 3. 只执行一次：初始化数据等
 # ------------------------------------------------------------
 if [ -f "$ONCE_MARK" ]; then
     log info "once 已执行过，跳过"
@@ -121,11 +233,14 @@ else
 fi
 
 # ------------------------------------------------------------
-# 3. 主进程：必须前台运行，docker stop 才能优雅退出
-#    走到这里说明 prepare / once 都成功，清掉失败计数
-#    注意：这行只代表「交给 main.sh」，main.sh 里的命令是否真的
-#    起来了要看它自己的输出
+# 4. 启动后台任务，然后把容器交给 main.sh
 # ------------------------------------------------------------
 rm -f "$ATTEMPT_FILE"
-log -f success "main（prepare/once 完成，交给 main.sh）"
+
+if [ "$UPDATE_INTERVAL_DAYS" -gt 0 ] && [ -f "${DIR}/update.sh" ]; then
+    log info "启用定时更新检查：每 ${UPDATE_INTERVAL_DAYS} 天，${UPDATE_CHECK_AT} 检查；有更新立即重启"
+    update_loop &
+fi
+
+log info "main（prepare/update/once 完成，启动 main.sh）"
 exec bash "${DIR}/main.sh"
