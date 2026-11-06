@@ -7,6 +7,11 @@ services:
     # 想用桥接网络就注释掉这行，再打开下面的 ports
     network_mode: host
     restart: unless-stopped
+    # 多进程容器用 tini 回收孤儿进程（建议保持开启）
+    init: true
+    # 停止全部服务需要时间：TERM → 各服务超时 → KILL
+    # 默认 10s 可能不够，多进程时按 SERVICE_STOP_TIMEOUT 总和调整
+    stop_grace_period: 30s
     # 工作目录默认是 /；需要固定就取消注释（挂载代码后用 /workspace 之类）
     # working_dir: /workspace
     # 需要传给容器的变量，在这里加一行即可：KEY: 值
@@ -21,15 +26,21 @@ services:
       # UPDATE_TIMEOUT: 60
       # 1 = 启动时更新失败按启动失败处理（默认 0：只告警，旧版本继续启动）
       # UPDATE_STRICT: 0
-      # 装到新版本后立即重启服务（只重启 main.sh，容器不退出），
+      # 装到新版本后立即重启全部服务（只重启服务，容器不退出），
       # 0 = 只装不重启（默认 1）
       # UPDATE_RESTART: 1
       # 额外加入 PATH 的目录，冒号分隔（默认已补 ~/.local/bin 等常见目录）
       # EXTRA_PATH_DIRS: /opt/tools/bin:/workspace/bin
       # 日志文件目录（log.sh 写入；挂载了 /data 才跟着数据卷保留，不设时 start.sh 也默认用 /data/logs）
       LOG_BASE_DIR: /data/logs
-      # 服务日志（默认 /data/logs/service/service.log）
+      # 服务日志目录：每个服务写 <SERVICE_LOG_DIR>/<名称>.log
+      # SERVICE_LOG_DIR: /data/logs/service
+      # 每个服务日志保留最近多少天的归档
       # SERVICE_LOG_KEEP_DAYS: 15
+      # 服务停止超时（秒）；每个服务可在 startup/services.sh 的 SERVICE_STOP_TIMEOUT 单独覆盖
+      # SERVICE_STOP_TIMEOUT_DEFAULT: 10
+      # 是否用 setsid 按进程组启动/停止（默认 1，能一起杀掉 worker 子进程）
+      # SERVICE_USE_PROCESS_GROUP: 1
       # 启动摘要里显示的端口/密码（可选）
       # SERVICE_PORT: 8080
       # SERVICE_PASSWORD: 换成你的密码

@@ -14,10 +14,12 @@
 │   ├── prepare.sh        # 每次启动都执行
 │   ├── update.sh         # 可选：每次启动检查服务更新（失败不阻塞）
 │   ├── once.sh           # 只执行一次
-│   └── main.sh           # 服务管理脚本（自定义 start / stop）
+│   ├── services.sh       # 项目专属：声明要启动哪些进程
+│   └── main.sh           # 固定薄壳：加载 supervisor + services
 ├── template/             # 固定模板，无需修改
 │   ├── Dockerfile
-│   └── start.sh          # 依次调用 startup/ 下的三个脚本
+│   ├── start.sh          # 依次调用 startup/ 下的三个脚本
+│   └── supervisor.sh     # 多进程启动/停止/日志/信号处理
 ├── check.sh              # 本地自查（push 前跑，CI 也用）
 ├── docker-compose.yml    # 部署配置（默认 host 网络）
 └── .github/workflows/build-image.yml
@@ -34,24 +36,59 @@
 | `prepare.sh` | **每次**启动（含 `docker restart`） | 设密码、改配置、建目录等可重复执行的操作 |
 | `update.sh` | **每次**启动（可选，`prepare` 之后）；`UPDATE_INTERVAL_DAYS > 0` 时运行期按天定时执行 | 检查服务有没有新版本，有就更新（失败默认不阻塞） |
 | `once.sh` | **只执行一次**（标记文件 `/data/.startup-once.done`） | 初始化数据、生成配置、建表/迁移等不能重复执行的操作 |
-| `main.sh` | 启动时 `exec`，之后一直常驻 | 服务管理：`start_service` / `stop_service` 两个函数 |
+| `main.sh` | 启动时 `exec`，之后一直常驻 | 固定薄壳：加载 `supervisor.sh` 和 `services.sh`，调用 `supervise` |
 
-`main.sh` 是常驻的服务管理脚本：
+`main.sh` / `supervisor.sh` 的行为：
 
-- 更新装好后收到 `USR1` → 调 `stop_service`，再 `start_service`（只重启服务，容器不动）
-- `docker stop` 收到 `TERM` → 调 `stop_service`，然后退出
-- 服务自己崩溃/退出 → `main.sh` 跟着退出，容器由 restart 策略拉起
+- `services.sh` 里声明的全部服务启动后，等待任意一个退出
+- 任一服务退出 → 停掉全部服务 → `main.sh` 退出 → 容器由 restart 策略拉起
+- 更新装好后收到 `USR1` → 停掉全部服务，再重新启动全部（容器不动）
+- `docker stop` 收到 `TERM` → 依次停止全部服务，超过各自超时后 `SIGKILL`
 
 - `once.sh` 成功后才写标记；想重新执行就删掉 `/data/.startup-once.done` 再重启
 - 标记在 `/data` 里，跟着数据卷走；没挂卷时等同于每个容器一次
 - `update.sh` 失败默认只告警、不阻塞启动（`UPDATE_STRICT=1` 时才按启动失败处理）
 - 其余脚本失败（非 0 退出）容器就不会启动，日志里会打印**哪个脚本失败、退出码多少**
 
+## 多进程（startup/services.sh）
+
+`startup/services.sh` 是**项目专属**文件，只需要在这里声明进程；启动/停止/日志/信号处理都由固定的 `template/supervisor.sh` 负责。
+
+约定：
+
+```bash
+SERVICE_NAMES=(mqtt api)
+SERVICE_STOP_TIMEOUT=([mqtt]=5 [api]=15)   # 可选，默认 SERVICE_STOP_TIMEOUT_DEFAULT=10
+
+start_mqtt() {
+    run_service mqtt mosquitto -c /data/mosquitto.conf
+}
+stop_mqtt() { :; }                          # 可选；默认 supervisor 发 TERM
+
+start_api() {
+    run_service api uvicorn main:app \
+        --app-dir /data \
+        --host 0.0.0.0 \
+        --port "${PORT:-8080}"
+}
+stop_api() { :; }
+```
+
+- `start_<名称>()` **必须**调用 `run_service <名称> <命令...>`，把进程交给 supervisor 管理
+- `stop_<名称>()` 可选；需要专用停止命令时写在这里，默认只给进程（组）发 `TERM`
+- 每个服务单独写日志：`/data/logs/service/<名称>.log`
+- 启动顺序按 `SERVICE_NAMES`，停止顺序反过来
+- 默认用 `setsid` 按进程组启动和停止，能一起杀掉 worker 子进程；不需要时设 `SERVICE_USE_PROCESS_GROUP=0`
+- 多进程容器建议保持 compose 里的 `init: true`，由 tini 回收孤儿进程
+
+重启语义是**粗粒度**的：任一服务退出，全部停止，容器退出后由 Docker 拉起。
+如果希望「只重启挂掉的那个服务」，或需要服务依赖/就绪顺序，建议改用 s6-overlay，或把服务拆成多个容器。Bash supervisor 适合 2～5 个紧耦合进程。
+
 ## 自动更新（启动时 + 定时，可选）
 
 每次启动先跑 `startup/update.sh`：查当前版本 → 查最新版本 → 有更新就装。设置 `UPDATE_INTERVAL_DAYS` 之后，运行期间每隔 N 天在 `UPDATE_CHECK_AT`（默认凌晨 `04:00`）再检查一次。模板不知道你的服务怎么升级，所以只负责调度，逻辑写在 `startup/update.sh` 里（仓库自带空实现，以及 opencode / GitHub Releases 两个示例，取消注释即可用）。
 
-**检查到新版本会立即重启服务**：`update.sh` 装好后返回 10，后台循环直接给 `main.sh` 发 `USR1`，由它调用 `stop_service` / `start_service`。因为检查本身就在凌晨 4 点，所以重启也发生在低峰期。
+**检查到新版本会立即重启服务**：`update.sh` 装好后返回 10，后台循环直接给 `main.sh` 发 `USR1`，由 supervisor 停掉全部服务再重新启动。因为检查本身就在凌晨 4 点，所以重启也发生在低峰期。
 
 | 环境变量 | 默认 | 作用 |
 |---|---|---|
@@ -90,11 +127,11 @@
 - 多个实例不要共用 `/data`（更新和日志都在里面）
 - 定时循环是常驻进程，日志会一直追加到同一个文件（按文件数的 `LOG_MAX_FILES` 管不到它），长期运行注意日志大小
 
-⚠️ **检查在 `UPDATE_CHECK_AT`，装完立即重启（容器不动）**：Linux 上替换正在运行的二进制不会影响已启动的进程（内存里还是旧的），所以检查到新版本、装完后马上给 `main.sh` 发 `USR1`，由它调用 `stop_service` / `start_service`。容器一直保持运行，`prepare` / `once` 不重跑，定时循环也不中断。
+⚠️ **检查在 `UPDATE_CHECK_AT`，装完立即重启（容器不动）**：Linux 上替换正在运行的二进制不会影响已启动的进程（内存里还是旧的），所以检查到新版本、装完后马上给 `main.sh` 发 `USR1`，由 supervisor 停掉全部服务再重新启动。容器一直保持运行，`prepare` / `once` 不重跑，定时循环也不中断。
 
 - 检查时间是容器本地时间，靠 `TZ` 决定；`UPDATE_CHECK_AT: "04:00"` 记得加引号（YAML 会把 `04:00` 当成数字）
 - 间隔 N 天表示「每 N 天的这个时间检查一次」，不是从容器启动时间开始数
-- `stop_service` 要确保服务真的停掉（有专用停止命令就直接用，别只 `kill` 一下）
+- `stop_<名称>` 或默认的 `TERM` 要确保服务真的停掉（有专用停止命令就直接用，别只 `kill` 一下）
 - 想「只装、下次重启容器再生效」就设 `UPDATE_RESTART=0`
 - `main.sh` 自己退出（崩溃/正常结束）时容器结束，由 restart 策略拉起
 
@@ -183,6 +220,8 @@ CI 的 Validate 步骤调用的是同一个脚本，本地过了线上基本不�
 - 必备文件是否齐全
 - `install/`、`startup/`、`template/` 下脚本的语法
 - `install/app.conf` 必填项（`IMAGE_REPO` / `IMAGE_TAG` / `PLATFORMS` / 非空的 `LOG_LIB_URL`）与开关取值（`true` / `false`）
+- `startup/services.sh` 的多进程契约：`SERVICE_NAMES` 非空、每个服务都有 `start_<名称>()`
+- `startup/main.sh` 是否加载 `supervisor.sh` / `services.sh`，`supervisor.sh` 是否提供 `supervise()`
 - Dockerfile 里 `wget` 的下载路径在仓库中是否真的存在（`update.sh` 除外，它是可选文件）、`startup/` 脚本列表是否一致
 - 三处路径是否对得上：`start.sh` 的 `DIR`、`install.sh` 的 `CONF`、`ENTRYPOINT` 指向的文件，都必须和 Dockerfile 里的下载位置一致
 - `docker-compose.yml` 的镜像名是否与 `install/app.conf` 的 `IMAGE_REPO:IMAGE_TAG` 一致（`container_name` 只提醒不校验）
@@ -202,7 +241,7 @@ docker compose up -d
     container_name: my-image
 ```
 
-`start.sh` 最后会 `exec main.sh`，所以 `main.sh` 是容器主进程。如果服务会留下孤儿进程，可以自己加 `init: true`（或 `docker run --init`）让 tini 回收；不加也能正常运行。
+`start.sh` 最后会 `exec main.sh`，所以 `main.sh` 是容器主进程。多进程模板默认在 compose 里开启 `init: true`，由 tini 回收孤儿进程；如果服务还会额外 fork 后台进程，建议保留这一项。
 
 默认使用 **host 网络**（`network_mode: host`），容器直接用宿主机端口，`ports:` 映射不生效。需要独立网络时注释掉 `network_mode`，再打开 `ports`：
 
@@ -240,7 +279,7 @@ docker compose up -d
 | 路径 | 内容 | 生命周期 |
 |---|---|---|
 | `/opt/start.sh` | 启动入口（`ENTRYPOINT`） | 常驻 |
-| `/opt/startup/*.sh` | `prepare.sh` / `update.sh` / `once.sh` / `main.sh` / `log.sh` | 常驻 |
+| `/opt/startup/*.sh` | `prepare.sh` / `update.sh` / `once.sh` / `services.sh` / `main.sh` / `supervisor.sh` / `log.sh` | 常驻 |
 | `/tmp/app.conf`、`/tmp/custom-install.sh`、`/tmp/install.sh` | 构建期配置与安装脚本 | 安装完即删 |
 | `/data` | 数据卷挂载点 | 挂载 `./data` 时随卷保留；默认 compose 未挂载，随容器层丢失 |
 
@@ -255,7 +294,7 @@ docker compose up -d
 | 正常步骤（`prepare` / `once`） | 只写文件 |
 | 启动摘要（服务已启动、访问端口、密码） | 文件 + `docker logs`（只打这一次） |
 | 更新重启、异常退出 | 文件 + `docker logs` |
-| 服务进程自己的 stdout/stderr | 只写 `SERVICE_LOG`（不进 `docker logs`） |
+| 服务进程自己的 stdout/stderr | 只写 `/data/logs/service/<名称>.log`（不进 `docker logs`） |
 
 ```bash
 log info "prepare"                  # 只进文件
@@ -267,12 +306,12 @@ log -f error "prepare 失败（exit 1）" # 进 docker logs
 
 ```
 $ docker logs opencode-cs
-[2026-10-28 05:31:15] [main] 🎉 服务已启动（PID 123）
+[2026-10-28 05:31:15] [main] 🎉 服务已启动：api web（PID 123 124）
 [2026-10-28 05:31:15] [main] ✅ 访问端口: 8080
 [2026-10-28 05:31:15] [main] ✅ 密码: ********
 ```
 
-之后 `docker logs` 不再输出；只有更新重启（`重启服务（应用更新）`）或异常退出（`服务异常退出（exit N）`）时才会再加一行。
+之后 `docker logs` 不再输出；只有更新重启（`重启全部服务（应用更新）`）或异常退出（`服务 xxx 退出（exit N）`）时才会再加一行。
 
 失败时才把原因和重试情况带出来：
 
@@ -291,21 +330,22 @@ $ docker logs opencode-cs
 
 ### 服务日志
 
-`main.sh` 里启动服务时把输出重定向到 `SERVICE_LOG`，不要让它直接打到 `docker logs`：
+`services.sh` 里用 `run_service` 启动的进程，stdout/stderr 会自动重定向到 `/data/logs/service/<名称>.log`，不要让它直接打到 `docker logs`：
 
 ```bash
-start_service() {
-    my-service --port "${PORT:-8080}" >> "$SERVICE_LOG" 2>&1 &
-    svc_pid=$!
+start_api() {
+    run_service api my-service --port "${PORT:-8080}"
 }
 ```
 
-`main.sh` 每天 00:00 把当天日志 copytruncate 归档为 `service.log-YYYY-MM-DD`，只保留最新 N 天：
+`supervisor.sh` 每天 00:00 把每个 `<名称>.log` copytruncate 归档为 `<名称>.log-YYYY-MM-DD`，只保留最新 N 天：
 
 | 环境变量 | 默认值 | 作用 |
 |---|---|---|
-| `SERVICE_LOG` | `/data/logs/service/service.log` | 服务 stdout/stderr（当天） |
-| `SERVICE_LOG_KEEP_DAYS` | `15` | 保留最近多少天的归档 |
+| `SERVICE_LOG_DIR` | `/data/logs/service` | 各服务 stdout/stderr 目录，每个服务一个 `<名称>.log` |
+| `SERVICE_LOG_KEEP_DAYS` | `15` | 每个服务保留最近多少天的归档 |
+| `SERVICE_STOP_TIMEOUT_DEFAULT` | `10` | 单个服务停止超时（秒），可由 `SERVICE_STOP_TIMEOUT` 覆盖 |
+| `SERVICE_USE_PROCESS_GROUP` | `1` | 用 `setsid` 按进程组启动/停止，能杀掉 worker 子进程 |
 | `SERVICE_PORT` | 空 | 启动摘要里打印访问端口 |
 | `SERVICE_PASSWORD` | 空 | 启动摘要里打印密码（有才打） |
 
@@ -349,10 +389,9 @@ tail -f "$(ls -t data/logs/start/*/*/*/*.log | head -1)"
 改完 `docker compose up -d` 生效，不用重建镜像。容器里的脚本/程序按变量名读取：
 
 ```bash
-# startup/main.sh
-start_service() {
-    my-server --port "${PORT:-8080}" &
-    svc_pid=$!
+# startup/services.sh
+start_api() {
+    run_service api my-server --port "${PORT:-8080}"
 }
 ```
 
@@ -373,7 +412,7 @@ start_service() {
 
 - `PYTHON_PACKAGES` 非空时会自动安装 `python3`、`pip3`，并提供 `python` 命令
 
-- 多个常驻进程请拆成多个容器，或用进程管理工具；`start_service` 启动的服务要能被 `stop_service` 停掉，更新时才能只重启服务
+- 多个常驻进程在 `startup/services.sh` 里声明，由 `template/supervisor.sh` 统一管理；进程彼此独立、不需要共享文件系统时，仍然建议拆成多个容器
 - apt / pip 装不了的东西写进 `install/custom-install.sh`，脚本内可用 `${TARGETARCH}` 区分 `amd64` / `arm64`
 - 项目命名不是 `amd64` / `arm64` 时用脚本里的 `arch_name` 映射，如 `arch_name x64 aarch64`
 - `custom-install.sh` 里装完依赖记得清理临时文件，减小镜像体积
